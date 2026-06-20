@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 14 — Java 锁深度：synchronized 锁升级 vs ReentrantLock vs AQS</title>
+<style>
+  :root {
+    --ink: #1a1a1a;
+    --muted: #555;
+    --accent: #1a6b3c;
+    --accent2: #2563eb;
+    --accent3: #7c3aed;
+    --bg: #fafaf8;
+    --card: #ffffff;
+    --border: #e0ddd8;
+    --code-bg: #f4f1eb;
+    --warn: #fff3cd;
+    --warn-border: #ffc107;
+    --success: #d4edda;
+    --success-border: #28a745;
+    --danger: #f8d7da;
+    --danger-border: #dc3545;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Georgia', 'Times New Roman', serif;
+    font-size: 17px;
+    line-height: 1.75;
+    color: var(--ink);
+    background: var(--bg);
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 48px 24px 80px;
+  }
+  h1 { font-size: 2rem; font-weight: 700; margin-bottom: 0.3em; }
+  h2 { font-size: 1.35rem; font-weight: 700; margin: 2.2em 0 0.7em; border-bottom: 2px solid var(--border); padding-bottom: 0.3em; }
+  h3 { font-size: 1.1rem; font-weight: 700; margin: 1.6em 0 0.5em; }
+  p, li { margin-bottom: 0.8em; }
+  ul, ol { margin: 0.5em 0 1em 1.5em; }
+  li { margin-bottom: 0.3em; }
+  a { color: var(--accent2); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .meta { color: var(--muted); font-family: monospace; font-size: 0.85rem; margin-bottom: 2em; }
+  .nav { font-family: monospace; font-size: 0.8rem; margin-bottom: 2.5em; color: var(--muted); }
+  .nav a { color: var(--accent2); }
+
+  .sidebar { position: fixed; top: 48px; left: calc(50% - 620px); width: 200px; font-family: monospace; font-size: 0.78rem; line-height: 1.9; }
+  .sidebar a { color: var(--muted); display: block; }
+  .sidebar a:hover { color: var(--accent2); }
+  @media (max-width: 1100px) { .sidebar { display: none; } }
+
+  code {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.88em;
+    background: var(--code-bg);
+    padding: 2px 5px;
+    border-radius: 3px;
+  }
+  pre {
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 16px 20px;
+    border-radius: 6px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.82rem;
+    line-height: 1.6;
+    overflow-x: auto;
+    margin: 1em 0;
+  }
+  pre code { background: transparent; padding: 0; color: inherit; }
+
+  blockquote {
+    border-left: 4px solid var(--accent2);
+    background: #f0f7ff;
+    padding: 12px 20px;
+    margin: 1.2em 0;
+    border-radius: 0 6px 6px 0;
+  }
+
+  .callout {
+    border-left: 4px solid var(--accent);
+    background: #e8f5e9;
+    padding: 12px 20px;
+    margin: 1.2em 0;
+    border-radius: 0 6px 6px 0;
+  }
+  .callout.warn { border-left-color: var(--warn-border); background: var(--warn); }
+  .callout.danger { border-left-color: var(--danger-border); background: var(--danger); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin: 1em 0; }
+  th { background: #f1f5f9; padding: 8px 12px; text-align: left; border: 1px solid #e2e8f0; font-weight: 600; }
+  td { padding: 8px 12px; border: 1px solid #e2e8f0; vertical-align: top; }
+  tr:nth-child(even) td { background: #fafaf8; }
+
+  .flow { font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; line-height: 2; }
+  .flow .arrow { color: var(--muted); }
+
+  .quiz { background: var(--card); border: 2px solid var(--border); border-radius: 8px; padding: 20px 24px; margin: 1.4em 0; }
+  .quiz h3 { margin-top: 0; border: none; }
+  .quiz .opt { display: block; cursor: pointer; padding: 6px 10px; margin: 4px 0; border: 1px solid var(--border); border-radius: 5px; transition: background 0.15s; }
+  .quiz .opt:hover { background: #f1f5f9; }
+  .quiz .opt.correct { background: var(--success); border-color: var(--success-border); }
+  .quiz .opt.wrong { background: var(--danger); border-color: var(--danger-border); }
+  .quiz .fb { margin-top: 8px; font-size: 0.88rem; display: none; }
+  .quiz .fb.show { display: block; }
+  #scorebar { position: sticky; top: 0; background: var(--card); border: 2px solid var(--accent); border-radius: 8px; padding: 10px 16px; font-family: monospace; z-index: 10; margin: 1em 0; }
+  #banner { display: none; background: var(--success); border: 2px solid var(--success-border); border-radius: 8px; padding: 16px; text-align: center; font-weight: 700; margin: 1em 0; }
+
+  .check { background: #fffdf5; border: 1px dashed var(--warn-border); border-radius: 6px; padding: 12px 18px; margin: 1.2em 0; }
+
+  @media print { body { font-size: 12px; padding: 12px; max-width: 100%; } pre { font-size: 9px; } .sidebar { display: none; } }
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <strong>本课导航</strong>
+  <a href="#connect">▸ 开篇连接</a>
+  <a href="#pre">▸ 前置检查</a>
+  <a href="#s1">1. synchronized 锁升级</a>
+  <a href="#s2">2. AQS 三大件</a>
+  <a href="#s3">3. AQS 模板方法</a>
+  <a href="#s4">4. ReentrantLock</a>
+  <a href="#s5">5. 共享模式</a>
+  <a href="#s6">6. CAS 与 ABA</a>
+  <a href="#interview">▸ 面试话术</a>
+  <a href="#quiz">▸ 章末 Quiz</a>
+  <a href="#action">▸ 课后行动</a>
+  <a href="#source">▸ Primary Source</a>
+</div>
+
+<div class="nav">
+  <a href="../lesson-index.html">← 课程目录</a> ·
+  <a href="0003-jvm-gc-deep-dive.html">L03 JVM</a> ·
+  <a href="0006-java-thread-pool.html">L06 线程池</a> ·
+  <a href="0012-redisson-watchdog.html">L12 Redisson</a>
+</div>
+
+<h1>Java 锁深度</h1>
+<p style="font-size: 1.1rem; color: var(--muted); margin-bottom: 0.5em;">synchronized 锁升级 vs ReentrantLock vs AQS 内部实现</p>
+<div class="meta">Lesson 14 · 2026-06-20 · ⏱ 35 min · 进阶</div>
+
+<h2 id="connect">开篇连接</h2>
+<blockquote>
+<p>面试里「synchronized 和 ReentrantLock 区别」是开场题，「AQS 是什么、ReentrantLock 怎么基于它实现」是中级 / 高级的分水岭。你已经在 <strong>L06 线程池</strong> 见过 <code>Worker extends AQS</code>，在 <strong>L12</strong> 见过 Redisson 分布式锁——这一课把 JVM 本地锁的底盘补齐，让你能用同一套「state + 等待队列 + CAS」的语言串起本地锁和分布式锁。</p>
+</blockquote>
+
+<h2 id="pre">前置检查</h2>
+
+<div class="check">
+  <p><strong>前置 1</strong>：volatile 保证的两件事是什么？（关系到为什么 AQS 的 state 必须是 volatile）</p>
+  <details><summary style="cursor:pointer;color:var(--accent2);">查看答案</summary>
+  <p>① <strong>可见性</strong>：一个线程的写立即对其他线程可见（刷主存 + 失效其他 CPU 缓存行）；② <strong>禁止重排序</strong>：volatile 写之前的操作不会重排到它后面，读之后的操作不会重排到它前面。注意：volatile <strong>不保证原子性</strong>，所以 <code>state++</code> 仍需 CAS。</p>
+  </details>
+</div>
+
+<div class="check">
+  <p><strong>前置 2</strong>（来自 L12）：Redisson 可重入锁靠什么记录重入次数？</p>
+  <details><summary style="cursor:pointer;color:var(--accent2);">查看答案</summary>
+  <p>Redis Hash 里的 <code>{uuid:threadId → count}</code>，重入一次 count + 1，解锁一次 count - 1，归零才真正 DEL。<strong>记住这个 count——本课的 AQS state 在 ReentrantLock 里扮演的就是同一个角色</strong>。</p>
+  </details>
+</div>
+
+<h2 id="s1">1. synchronized 锁升级</h2>
+
+<p>很多人以为 <code>synchronized</code> 就是「重量级锁、慢」。JDK 6 之后它有了<strong>锁升级</strong>机制：根据竞争激烈程度，锁状态会单向升级，尽量避免操作系统级别的互斥开销。</p>
+
+<h3>Mark Word：锁状态存在哪里</h3>
+
+<p>每个 Java 对象头里有一个 <strong>Mark Word</strong>（64 位 JVM 下 64 bit）。它复用同一段空间，根据低位的<strong>锁标志位</strong>表达不同含义——这正是 <strong>L03 JVM</strong> 里讲对象头时埋下的伏笔。</p>
+
+<table>
+  <tr><th>状态</th><th>Mark Word 主要内容</th><th>锁标志位</th></tr>
+  <tr><td>无锁</td><td>hashCode、分代年龄</td><td><code>01</code> (biased=0)</td></tr>
+  <tr><td>偏向锁</td><td>持有线程 ID、epoch、分代年龄</td><td><code>01</code> (biased=1)</td></tr>
+  <tr><td>轻量级锁</td><td>指向栈中 Lock Record 的指针</td><td><code>00</code></td></tr>
+  <tr><td>重量级锁</td><td>指向 monitor (ObjectMonitor) 的指针</td><td><code>10</code></td></tr>
+</table>
+
+<h3>四阶段升级路径</h3>
+
+<pre class="flow">
+无锁 ──首个线程进入──▸ 偏向锁  (CAS 把线程 ID 写进 Mark Word，之后同一线程无同步开销)
+   │                      │
+   │              第二个线程来竞争
+   ▼                      ▼
+   └──────────────▸ 轻量级锁 (CAS 自旋：把 Mark Word 换成指向栈 Lock Record 的指针)
+                          │
+                  自旋失败 / 竞争加剧
+                          ▼
+                     重量级锁 (膨胀为 ObjectMonitor，未抢到的线程被 OS 挂起 park)
+</pre>
+
+<table>
+  <tr><th>阶段</th><th>触发条件</th><th>代价</th></tr>
+  <tr><td>偏向锁</td><td>只有一个线程访问，无竞争</td><td>近乎零（一次 CAS 后免同步）</td></tr>
+  <tr><td>轻量级锁</td><td>出现第二个线程，但竞争不激烈（交替执行）</td><td>CAS 自旋，消耗 CPU 但不进内核</td></tr>
+  <tr><td>重量级锁</td><td>自旋达到阈值 / 多线程激烈争抢</td><td>线程挂起 + 唤醒，涉及用户态↔内核态切换</td></tr>
+</table>
+
+<div class="callout warn">
+  <strong>单向升级，不会降级</strong>（运行期内）。一旦膨胀为重量级锁，这个对象就回不去了。所以「先用偏向 / 轻量级试探，扛不住再升级」是它的核心哲学。
+</div>
+
+<h3>JDK 15 为什么废弃偏向锁（JEP 374）</h3>
+
+<ul>
+  <li><strong>收益下降</strong>：偏向锁是为「无竞争且重复加锁」场景设计的（如早期 <code>Hashtable</code>、<code>StringBuffer</code>）。现代代码大量使用 <code>java.util.concurrent</code> 而非 synchronized，偏向锁受益的场景越来越少。</li>
+  <li><strong>维护成本高</strong>：偏向锁的<strong>撤销（revoke）</strong>需要在安全点（safepoint）停止持有线程、修改 Mark Word，一旦发生竞争反而比直接用轻量级锁更慢，且代码极其复杂、难以维护。</li>
+</ul>
+
+<p>JDK 15 默认关闭（<code>-XX:+UseBiasedLocking</code> 被标记 deprecated），后续版本逐步移除。<strong>面试答法：偏向锁不是「错」，是「投入产出比变低」——维护一段复杂的撤销逻辑去优化一个越来越少见的场景，不划算。</strong></p>
+
+<div class="check">
+  <p><strong>即时检验</strong>：第二个线程来竞争一把偏向锁时，锁会直接升级到重量级吗？</p>
+  <details><summary style="cursor:pointer;color:var(--accent2);">查看答案</summary>
+  <p>不会。先撤销偏向 → 升级为<strong>轻量级锁</strong>（CAS 自旋）。只有自旋失败 / 竞争激烈才进一步膨胀为重量级锁。跳级是常见误区。</p>
+  </details>
+</div>
+
+<h2 id="s2">2. AQS 三大件</h2>
+
+<p>讲完 JVM 内置锁，进入 J.U.C 的发动机：<strong>AbstractQueuedSynchronizer (AQS)</strong>。<code>ReentrantLock</code>、<code>CountDownLatch</code>、<code>Semaphore</code>、<code>ReentrantReadWriteLock</code>、线程池的 <code>Worker</code> 全部建在它上面。</p>
+
+<p>AQS 只有三个核心件：</p>
+
+<pre><code>public abstract class AbstractQueuedSynchronizer {
+    // ① 同步状态：锁的"灵魂"，不同子类赋予不同语义
+    private volatile int state;
+
+    // ② CLH 变体双向队列的头尾指针：抢不到锁的线程在这里排队
+    private transient volatile Node head;
+    private transient volatile Node tail;
+
+    // ③ CAS：所有对 state / 队列的修改都靠原子操作，无锁化
+    protected final boolean compareAndSetState(int expect, int update) {
+        return U.compareAndSetInt(this, STATE, expect, update);
+    }
+}</code></pre>
+
+<h3>state 的语义复用——这是 AQS 最妙的设计</h3>
+
+<table>
+  <tr><th>子类</th><th>state 含义</th><th>模式</th></tr>
+  <tr><td>ReentrantLock</td><td>重入次数（0=未锁，n=重入 n 次）</td><td>独占</td></tr>
+  <tr><td>CountDownLatch</td><td>剩余计数（到 0 放行所有等待者）</td><td>共享</td></tr>
+  <tr><td>Semaphore</td><td>剩余许可数</td><td>共享</td></tr>
+  <tr><td>ReentrantReadWriteLock</td><td>高 16 位=读锁数，低 16 位=写锁重入</td><td>共享+独占</td></tr>
+</table>
+
+<h3>Node 的 waitStatus</h3>
+
+<p>队列里每个 <code>Node</code> 包裹一个等待线程，<code>waitStatus</code> 描述它的状态：</p>
+
+<pre><code>SIGNAL    = -1;  // 后继节点需要被当前节点唤醒（释放时要 unpark 后继）
+CANCELLED =  1;  // 线程被取消（超时/中断），需从队列移除
+CONDITION = -2;  // 节点在 Condition 条件队列里等待
+PROPAGATE = -3;  // 共享模式：释放需向后传播</code></pre>
+
+<div class="callout">
+  <strong>一句话</strong>：AQS = 一个 volatile int（state）+ 一个 CAS 维护的双向等待队列（CLH 变体）。子类只需定义「state 怎么算获取成功」，排队 / 阻塞 / 唤醒全由 AQS 模板代劳。
+</div>
+
+<h2 id="s3">3. AQS 模板方法骨架</h2>
+
+<p>AQS 用<strong>模板方法模式</strong>：骨架流程写死在父类，把「是否获取成功」的判断留给子类重写。</p>
+
+<pre><code>// 父类模板（独占获取，写死）
+public final void acquire(int arg) {
+    if (!tryAcquire(arg) &&                                    // ① 子类实现：尝试抢
+        acquireQueued(addWaiter(Node.EXCLUSIVE), arg))        // ② 抢不到 → 入队 → 阻塞
+        selfInterrupt();
+}
+
+// 子类必须重写（父类默认抛异常）
+protected boolean tryAcquire(int arg) {
+    throw new UnsupportedOperationException();
+}</code></pre>
+
+<h3>acquire 的完整流程</h3>
+
+<pre class="flow">
+acquire(1)
+   │
+   ▼ tryAcquire(1)  ── 子类逻辑：CAS state 0→1 成功? ──成功──▸ 拿到锁，返回
+   │ 失败
+   ▼ addWaiter(EXCLUSIVE)   把当前线程包成 Node，CAS 入队尾
+   │
+   ▼ acquireQueued(node, 1)
+   │     循环：
+   │       前驱是 head? ──是──▸ 再 tryAcquire 一次 ──成功──▸ 设自己为 head，返回
+   │       否则 → 把前驱 waitStatus 设 SIGNAL → LockSupport.park(this)  ← 线程挂起
+   ▼
+release(1)
+   ▼ tryRelease(1) ── 子类逻辑：state 减到 0? ──是──▸ unparkSuccessor(head)
+                                                       LockSupport.unpark(后继线程)
+</pre>
+
+<table>
+  <tr><th>方法</th><th>归属</th><th>职责</th></tr>
+  <tr><td><code>acquire / release</code></td><td>AQS 父类</td><td>模板：编排排队、阻塞、唤醒</td></tr>
+  <tr><td><code>tryAcquire / tryRelease</code></td><td>子类重写</td><td>定义 state 的获取 / 释放语义</td></tr>
+  <tr><td><code>addWaiter / acquireQueued</code></td><td>AQS 父类</td><td>入队 + 自旋 + park</td></tr>
+  <tr><td><code>LockSupport.park/unpark</code></td><td>底层</td><td>线程阻塞 / 唤醒（基于 Unsafe）</td></tr>
+</table>
+
+<blockquote>
+  <p><strong>对照 L12 Redisson</strong>：Redisson 的「抢不到锁就订阅 channel 等待唤醒」≈ AQS 的「入队 + park」；Redisson 解锁时 <code>publish</code> 通知 ≈ AQS 的 <code>unparkSuccessor</code>。一个在 Redis pub/sub 上排队，一个在 JVM 堆里的双向链表上排队，<strong>设计同构</strong>。</p>
+</blockquote>
+
+<div class="check">
+  <p><strong>即时检验</strong>：<code>tryAcquire</code> 返回 false 后，线程是立刻 park 吗？</p>
+  <details><summary style="cursor:pointer;color:var(--accent2);">查看答案</summary>
+  <p>不是。先 <code>addWaiter</code> 入队，然后在 <code>acquireQueued</code> 里<strong>自旋</strong>：如果发现自己前驱就是 head，还会再 <code>tryAcquire</code> 试一次（拿锁的可能性大）。只有确认前驱状态为 SIGNAL 后才真正 <code>park</code>。这是「先自旋探一下，再睡」的优化。</p>
+  </details>
+</div>
+
+<h2 id="s4">4. ReentrantLock：独占模式实战</h2>
+
+<h3>可重入：state 累加 + exclusiveOwnerThread</h3>
+
+<pre><code>// 非公平版 tryAcquire（简化）
+protected final boolean tryAcquire(int acquires) {
+    final Thread current = Thread.currentThread();
+    int c = getState();
+    if (c == 0) {                                  // 锁空闲
+        if (compareAndSetState(0, acquires)) {     // CAS 抢
+            setExclusiveOwnerThread(current);
+            return true;
+        }
+    } else if (current == getExclusiveOwnerThread()) {  // 已是持有者 → 重入
+        int nextc = c + acquires;                   // state 直接累加！
+        setState(nextc);                            // 无需 CAS（独占，无竞争）
+        return true;
+    }
+    return false;
+}</code></pre>
+
+<p>解锁时 <code>state</code> 逐次减 1，<strong>减到 0 才真正释放</strong>并唤醒后继——这与 L12 Redisson 的 hash count 逻辑完全同构。</p>
+
+<h3>state 变化追踪（重要！quiz 必考）</h3>
+
+<pre class="flow">
+lock();        // state: 0 → 1   (CAS 成功, owner=自己)
+lock();        // state: 1 → 2   (重入, 直接 setState)
+unlock();      // state: 2 → 1   (减 1, 未归零, 不释放)
+unlock();      // state: 1 → 0   (归零, 清 owner, unpark 后继)
+</pre>
+
+<div class="callout danger">
+  <strong>陷阱</strong>：加锁几次就要解锁几次。少调一次 <code>unlock()</code>，state 永远不为 0，锁永不释放 → 其他线程死等。所以 <code>unlock()</code> 必须放 <code>finally</code>。
+</div>
+
+<h3>公平 vs 非公平：就差一行</h3>
+
+<pre><code>// 公平锁 FairSync.tryAcquire 比非公平多了这一行判断：
+if (c == 0) {
+    if (!hasQueuedPredecessors() &&         // ★ 关键：队列里有人排在我前面吗?
+        compareAndSetState(0, acquires)) {
+        setExclusiveOwnerThread(current);
+        return true;
+    }
+}</code></pre>
+
+<table>
+  <tr><th></th><th>非公平（默认）</th><th>公平</th></tr>
+  <tr><td>新线程到来</td><td>不看队列，直接 CAS 抢</td><td>先查 <code>hasQueuedPredecessors()</code>，有人排队就乖乖入队</td></tr>
+  <tr><td>吞吐量</td><td><strong>高</strong></td><td>低</td></tr>
+  <tr><td>原因</td><td>减少线程唤醒 / 上下文切换：刚释放锁时新线程"插队"成功，省去唤醒队首线程的开销</td><td>严格 FIFO，但频繁 park/unpark 拖慢吞吐</td></tr>
+  <tr><td>风险</td><td>队列线程可能饥饿</td><td>无饥饿</td></tr>
+</table>
+
+<blockquote>
+  <p><strong>为什么默认非公平</strong>：唤醒一个被 park 的线程要内核态切换，很慢。这段时间里如果有个新线程恰好来抢，让它"插队"直接拿走，整体吞吐更高。公平性的代价是吞吐——Doug Lea 默认选了吞吐。</p>
+</blockquote>
+
+<h3>synchronized vs ReentrantLock 总对比</h3>
+
+<table>
+  <tr><th>维度</th><th>synchronized</th><th>ReentrantLock</th></tr>
+  <tr><td>实现层面</td><td>JVM 内置（monitorenter/exit + Mark Word）</td><td>JDK 代码（AQS）</td></tr>
+  <tr><td>锁释放</td><td>自动（出 block / 异常）</td><td>手动 <code>unlock()</code>，必须 finally</td></tr>
+  <tr><td>可中断</td><td>不可</td><td>可 <code>lockInterruptibly()</code></td></tr>
+  <tr><td>超时获取</td><td>不可</td><td>可 <code>tryLock(timeout)</code></td></tr>
+  <tr><td>公平锁</td><td>仅非公平</td><td>可选公平 / 非公平</td></tr>
+  <tr><td>条件变量</td><td>1 个（wait/notify）</td><td>多个 <code>Condition</code></td></tr>
+  <tr><td>可重入</td><td>是</td><td>是</td></tr>
+</table>
+
+<h3>Condition：条件队列 → 同步队列的转移</h3>
+
+<p><code>Condition</code> 比 <code>Object.wait/notify</code> 强在「一把锁挂多个条件队列」（如生产者队列、消费者队列分开）。机制：</p>
+
+<pre class="flow">
+await()   线程从【同步队列】移出 → 包成 Node 挂入【条件队列】→ 释放锁 → park
+            │
+signal()  把【条件队列】队首 Node 转移回【同步队列】尾部
+            │
+            ▼ 它在同步队列里重新排队竞争锁，抢到才从 await() 返回
+</pre>
+
+<h2 id="s5">5. 共享模式：CountDownLatch / Semaphore</h2>
+
+<p>独占模式一次只放一个线程；共享模式可同时放多个。区别就在 <code>tryAcquireShared</code> 返回值 ≥ 0 时会<strong>向后传播</strong>，连续唤醒多个等待线程。</p>
+
+<h3>CountDownLatch(3) 的 state 之旅</h3>
+
+<pre><code>CountDownLatch latch = new CountDownLatch(3);   // state = 3
+
+// 工作线程：
+latch.countDown();   // tryReleaseShared: CAS state 3 → 2
+latch.countDown();   // CAS state 2 → 1
+latch.countDown();   // CAS state 1 → 0  ← 归零! 触发 doReleaseShared 唤醒所有等待者
+
+// 主线程：
+latch.await();       // tryAcquireShared: state != 0 → 返回负数 → park 阻塞
+                     // 直到 state == 0 → 返回正数 → 放行，且传播唤醒其他 await 线程</code></pre>
+
+<table>
+  <tr><th>操作</th><th>动了 state 吗</th><th>做了什么</th></tr>
+  <tr><td><code>countDown()</code></td><td>是，CAS 减 1</td><td>归零时唤醒所有 await 线程（共享传播）</td></tr>
+  <tr><td><code>await()</code></td><td>否，只读 state</td><td>state≠0 则入队 park；state==0 直接放行</td></tr>
+</table>
+
+<div class="callout">
+  <strong>state 语义复用的威力</strong>：ReentrantLock 把 state 当「重入计数」，CountDownLatch 当「倒计数」，Semaphore 当「许可数」。同一个 volatile int，三种锁，全靠子类的 <code>tryAcquire/tryRelease</code> 解释。这就是 AQS 被誉为「J.U.C 基石」的原因。
+</div>
+
+<h3>彩蛋：ThreadPoolExecutor.Worker 为什么是「不可重入」锁（接 L06）</h3>
+
+<p>线程池里的 <code>Worker extends AbstractQueuedSynchronizer</code>，它的 <code>tryAcquire</code> 写死只允许 0→1，<strong>不做重入累加</strong>：</p>
+
+<pre><code>protected boolean tryAcquire(int unused) {
+    if (compareAndSetState(0, 1)) {       // 只能从 0 抢到 1
+        setExclusiveOwnerThread(Thread.currentThread());
+        return true;
+    }
+    return false;                          // 已锁 → 直接失败，不重入
+}</code></pre>
+
+<p><strong>为什么故意不可重入</strong>：Worker 的锁状态被用来表达「这个线程是否正在执行任务」。如果可重入，调用 <code>setCorePoolSize</code> 等方法时去 <code>interruptIdleWorkers()</code>，可能在任务执行中（已持锁）又获得锁，误判为「空闲」而中断正在干活的线程。不可重入 → 正在执行任务的 Worker 必然持锁 → <code>tryLock()</code> 失败 → 不会被当成 idle 中断。</p>
+
+<h2 id="s6">6. CAS 基石与 ABA 问题</h2>
+
+<p>AQS 所有「无锁」操作都靠 CAS。CAS = Compare And Swap，一条 CPU 原子指令（x86 的 <code>cmpxchg</code>）：</p>
+
+<pre><code>// Unsafe 提供，比较内存值==expect 才写入 update，返回是否成功
+public final native boolean compareAndSwapInt(
+    Object o, long offset, int expect, int update);</code></pre>
+
+<p><strong>为什么 state 必须 volatile</strong>：CAS 只保证「比较+交换」这一步原子，但线程 A 改了 state 后，线程 B 必须<strong>立即看到</strong>新值，否则 B 拿旧值去 CAS 会反复失败、甚至读到脏数据导致逻辑错误。volatile 提供可见性 + 禁止重排序，是 CAS 正确工作的前提。去掉 volatile，AQS 队列状态在多核间不可见 → 永久空转或丢失唤醒。</p>
+
+<h3>ABA 问题</h3>
+
+<pre class="flow">
+线程1 读到 state = A，准备 CAS(A → C)
+线程2 趁机：A → B → A   (改回 A 了)
+线程1 CAS(A → C) 成功！但中间发生过变化，它毫不知情 = ABA
+</pre>
+
+<p><strong>解法</strong>：加版本号。<code>AtomicStampedReference</code> 把「值 + stamp」一起 CAS，每次修改 stamp + 1，A→B→A 时 stamp 从 1→2→3，第三次的 A 已不是原来的 A。</p>
+
+<h2 id="interview">面试话术（项目锚定）</h2>
+
+<blockquote>
+<p><strong>Q：synchronized 和 ReentrantLock 怎么选？</strong></p>
+<p>「我的默认选择是 synchronized——JDK 6 以后有锁升级，无竞争时几乎零开销，且自动释放、不会忘记 unlock。只有需要这几个能力时才上 ReentrantLock：<strong>可中断等待</strong>（<code>lockInterruptibly</code>）、<strong>超时获取</strong>（<code>tryLock</code> 避免死等）、<strong>公平锁</strong>、<strong>多个条件队列</strong>（<code>Condition</code> 分离生产/消费等待）。比如我在 clickhouse-mcp-server 里给连接池做获取连接的逻辑，就用 <code>tryLock(timeout)</code> 来避免线程无限阻塞拖垮整个工具调用。」</p>
+</blockquote>
+
+<blockquote>
+<p><strong>Q：AQS 是什么，ReentrantLock 怎么基于它实现？</strong></p>
+<p>「AQS 是 J.U.C 的并发基础框架，核心就三件：一个 volatile int 的 state、一个 CAS 维护的 CLH 变体双向等待队列、以及一套 acquire/release 模板方法。它把『排队、阻塞、唤醒』这些复杂的同步骨架写死在父类，子类只需要重写 tryAcquire/tryRelease 来定义 state 的语义。ReentrantLock 就是把 state 解释为重入次数：0 表示空闲，CAS 抢到设为 1，同一线程再进来就直接累加，解锁减到 0 才唤醒队列里的后继线程。我在排查线程池源码时发现 Worker 也是继承 AQS 实现的不可重入锁,用来标记线程是否在执行任务。」</p>
+</blockquote>
+
+<blockquote>
+<p><strong>Q：本地锁和你用过的 Redisson 分布式锁有什么共性？</strong></p>
+<p>「设计上高度同构。三个维度对照：<strong>可重入</strong>——ReentrantLock 用 AQS 的 state 累加 + exclusiveOwnerThread 判断持有者，Redisson 用 Redis Hash 的 count + uuid:threadId；<strong>等待队列</strong>——AQS 在 JVM 堆里维护 CLH 双向链表 park/unpark，Redisson 靠 Redis pub/sub 订阅 channel 等待唤醒；<strong>差异</strong>在于分布式锁多了一个本地锁没有的问题——持有者跨进程崩溃，所以 Redisson 需要 TTL + WatchDog 续期，而本地锁的持有者和锁在同一个 JVM，线程死了锁状态也随之消失，不需要续期。」</p>
+</blockquote>
+
+<h2 id="quiz">章末 Quiz</h2>
+
+<div id="scorebar">得分：<span id="score">0</span> / 7</div>
+<div id="banner">全部答对！你已掌握 Java 锁与 AQS 核心机制。</div>
+
+<div class="quiz" data-q="q1">
+  <h3>Q1. 关于 synchronized 锁升级，下列哪项正确？</h3>
+  <span class="opt" onclick="answer('q1','A',this)">A. 偏向锁竞争失败会直接升级到重量级锁</span>
+  <span class="opt" onclick="answer('q1','B',this)">B. 重量级锁的 Mark Word 指向 monitor，标志位为 10</span>
+  <span class="opt" onclick="answer('q1','C',this)">C. 轻量级锁会把线程挂起到操作系统</span>
+  <span class="opt" onclick="answer('q1','D',this)">D. 锁可以从重量级降级回偏向锁</span>
+  <div class="fb"></div>
+</div>
+
+<div class="quiz" data-q="q2">
+  <h3>Q2. <code>lock(); lock(); unlock();</code> 执行后，ReentrantLock 的 state 是？</h3>
+  <span class="opt" onclick="answer('q2','A',this)">A. 0，锁已释放</span>
+  <span class="opt" onclick="answer('q2','B',this)">B. 1，未归零，锁仍被持有</span>
+  <span class="opt" onclick="answer('q2','C',this)">C. 2</span>
+  <span class="opt" onclick="answer('q2','D',this)">D. 抛 IllegalMonitorStateException</span>
+  <div class="fb"></div>
+</div>
+
+<div class="quiz" data-q="q3">
+  <h3>Q3. 公平锁的 tryAcquire 比非公平锁关键多了哪一行？</h3>
+  <span class="opt" onclick="answer('q3','A',this)">A. <code>setExclusiveOwnerThread(current)</code></span>
+  <span class="opt" onclick="answer('q3','B',this)">B. <code>compareAndSetState(0, 1)</code></span>
+  <span class="opt" onclick="answer('q3','C',this)">C. <code>!hasQueuedPredecessors()</code> 判断</span>
+  <span class="opt" onclick="answer('q3','D',this)">D. <code>LockSupport.park()</code></span>
+  <div class="fb"></div>
+</div>
+
+<div class="quiz" data-q="q4">
+  <h3>Q4. <code>CountDownLatch(3)</code> 中，<code>await()</code> 对 state 做了什么？</h3>
+  <span class="opt" onclick="answer('q4','A',this)">A. 把 state 减 1</span>
+  <span class="opt" onclick="answer('q4','B',this)">B. 只读 state，非 0 就 park 阻塞，不修改它</span>
+  <span class="opt" onclick="answer('q4','C',this)">C. 把 state 重置为 3</span>
+  <span class="opt" onclick="answer('q4','D',this)">D. CAS 把 state 设为 0</span>
+  <div class="fb"></div>
+</div>
+
+<div class="quiz" data-q="q5">
+  <h3>Q5. AQS 本地锁与 Redisson 分布式锁的关键差异是？</h3>
+  <span class="opt" onclick="answer('q5','A',this)">A. 本地锁不可重入，分布式锁可重入</span>
+  <span class="opt" onclick="answer('q5','B',this)">B. 分布式锁持有者可能跨进程崩溃，需要 TTL + 续期；本地锁线程死则锁状态随 JVM 消失</span>
+  <span class="opt" onclick="answer('q5','C',this)">C. 本地锁没有等待队列</span>
+  <span class="opt" onclick="answer('q5','D',this)">D. 两者没有任何共性</span>
+  <div class="fb"></div>
+</div>
+
+<div class="quiz" data-q="q6">
+  <h3>Q6. 为什么 AQS 的 state 必须是 volatile？</h3>
+  <span class="opt" onclick="answer('q6','A',this)">A. volatile 让 state++ 变原子</span>
+  <span class="opt" onclick="answer('q6','B',this)">B. 保证一个线程改 state 后其他线程立即可见，且禁止重排序，否则 CAS 读到脏值、丢失唤醒</span>
+  <span class="opt" onclick="answer('q6','C',this)">C. volatile 能替代 CAS</span>
+  <span class="opt" onclick="answer('q6','D',this)">D. 只是为了性能更快</span>
+  <div class="fb"></div>
+</div>
+
+<div class="quiz" data-q="q7">
+  <h3>Q7. ThreadPoolExecutor.Worker 继承 AQS 实现「不可重入」锁的目的是？</h3>
+  <span class="opt" onclick="answer('q7','A',this)">A. 节省内存</span>
+  <span class="opt" onclick="answer('q7','B',this)">B. 用锁状态标记线程是否在执行任务，避免正在干活的线程被当成 idle 而误中断</span>
+  <span class="opt" onclick="answer('q7','C',this)">C. 不可重入比可重入快</span>
+  <span class="opt" onclick="answer('q7','D',this)">D. AQS 不支持可重入</span>
+  <div class="fb"></div>
+</div>
+
+<h2 id="action">课后首要行动</h2>
+
+<ol>
+  <li><strong>读源码定位公平性那一行</strong>：打开 JDK 的 <code>ReentrantLock.java</code>，对比 <code>FairSync.tryAcquire</code> 和 <code>NonfairSync.tryAcquire</code>，亲眼确认 <code>hasQueuedPredecessors()</code> 的差异。</li>
+  <li><strong>用 JOL 看 Mark Word</strong>：引入 <code>org.openjdk.jol:jol-core</code>，打印一个对象在「无锁 / 加锁后」的对象头变化，验证锁标志位。</li>
+  <li><strong>手写一个 AQS 互斥锁</strong>：继承 AQS，重写 <code>tryAcquire/tryRelease</code>，实现一把最简单的不可重入互斥锁（≈ 50 行），跑通两个线程互斥。</li>
+  <li><strong>对照 L12 画一张同构图</strong>：把 ReentrantLock（state/owner/CLH 队列）和 Redisson（hash count/uuid:threadId/pub-sub）逐项对齐，存进 vault 笔记。</li>
+  <li><strong>在 clickhouse-mcp-server 里用 tryLock</strong>：给某处共享资源访问加上 <code>tryLock(timeout)</code>，作为项目里能讲的真实锁使用案例。</li>
+</ol>
+
+<h2 id="source">Primary Source</h2>
+
+<ul>
+  <li><strong>AQS 论文</strong>：Doug Lea, <a href="https://gee.cs.oswego.edu/dl/papers/aqs.pdf" target="_blank">The java.util.concurrent Synchronizer Framework</a>（AQS 设计原始论文，必读）</li>
+  <li><strong>JEP 374</strong>：<a href="https://openjdk.org/jeps/374" target="_blank">Deprecate and Disable Biased Locking</a>（偏向锁废弃官方说明）</li>
+  <li><strong>JDK 源码</strong>：<a href="https://github.com/openjdk/jdk/blob/master/src/java.base/share/classes/java/util/concurrent/locks/AbstractQueuedSynchronizer.java" target="_blank">AbstractQueuedSynchronizer.java</a> · <a href="https://github.com/openjdk/jdk/blob/master/src/java.base/share/classes/java/util/concurrent/locks/ReentrantLock.java" target="_blank">ReentrantLock.java</a></li>
+  <li><strong>对象头 / Mark Word</strong>：<a href="https://github.com/openjdk/jol" target="_blank">OpenJDK JOL</a>（实测对象头布局工具）</li>
+  <li><strong>关联课程</strong>：<a href="0003-jvm-gc-deep-dive.html">L03 对象头</a> · <a href="0006-java-thread-pool.html">L06 Worker/AQS</a> · <a href="0012-redisson-watchdog.html">L12 分布式锁对照</a></li>
+</ul>
+
+<blockquote>
+  <p><strong>有问题？</strong> 需要我展开 CLH 队列入队的 CAS 细节、画 Condition 双队列转移图、或对比 ReentrantReadWriteLock 的读写位拆分？</p>
+</blockquote>
+
+<script>
+const ANSWERS = { q1:'B', q2:'B', q3:'C', q4:'B', q5:'B', q6:'B', q7:'B' };
+const EXPLAIN = {
+  q1:'重量级锁 Mark Word 存 monitor 指针、标志位 10。偏向锁竞争先升轻量级（非直接重量级），轻量级是 CAS 自旋不挂起，且锁升级不可降级。',
+  q2:'lock 两次 state=2，unlock 一次减到 1，未归零，锁仍被持有。必须再 unlock 一次才释放。',
+  q3:'公平锁多了 !hasQueuedPredecessors() ——抢锁前先看队列有没有人排在前面，有就不插队。',
+  q4:'await() 只读 state，非 0 则入队 park 等待，它不修改 state。改 state 的是 countDown()。',
+  q5:'核心差异：分布式锁持有者跨进程，可能崩溃，需 TTL+WatchDog 续期；本地锁线程与锁同 JVM，无需续期。可重入/等待队列两者都有，是同构点。',
+  q6:'CAS 只保证比较交换原子，可见性靠 volatile：让 state 修改立即对其他线程可见并禁重排，否则脏读、丢唤醒。volatile 不能让 ++ 原子，也不能替代 CAS。',
+  q7:'Worker 锁状态表示「是否在执行任务」。不可重入保证执行中必持锁、tryLock 失败，从而不被 interruptIdleWorkers 当作空闲线程误中断。'
+};
+const answered = {};
+function answer(qid, choice, el) {
+  if (answered[qid]) return;
+  answered[qid] = true;
+  const box = document.querySelector('[data-q="'+qid+'"]');
+  const fb = box.querySelector('.fb');
+  const correct = ANSWERS[qid];
+  if (choice === correct) {
+    el.classList.add('correct');
+    fb.innerHTML = '✅ 正确！' + EXPLAIN[qid];
+  } else {
+    el.classList.add('wrong');
+    box.querySelectorAll('.opt').forEach(o => {
+      if (o.getAttribute('onclick').includes("'"+correct+"'")) o.classList.add('correct');
+    });
+    fb.innerHTML = '❌ 正确答案是 ' + correct + '。' + EXPLAIN[qid];
+  }
+  fb.classList.add('show');
+  updateTotal();
+}
+function updateTotal() {
+  let score = 0;
+  for (const q in answered) {
+    const box = document.querySelector('[data-q="'+q+'"]');
+    if (box.querySelector('.opt.correct') && !box.querySelector('.opt.wrong')) score++;
+  }
+  document.getElementById('score').textContent = score;
+  if (score === 7) document.getElementById('banner').style.display = 'block';
+}
+</script>
+
+</body>
+</html>
