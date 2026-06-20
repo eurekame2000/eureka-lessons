@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 06 — Java 线程池：核心原理与面试实战</title>
+  <style>
+    :root {
+      --bg: #fafaf8;
+      --text: #1a1a1a;
+      --accent: #2563eb;
+      --accent-light: #eff6ff;
+      --border: #e2e8f0;
+      --code-bg: #f1f5f9;
+      --success: #16a34a;
+      --success-light: #f0fdf4;
+      --warn: #d97706;
+      --warn-light: #fffbeb;
+      --danger: #dc2626;
+      --danger-light: #fef2f2;
+      --sidebar: #1e293b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Georgia', serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+    }
+    .layout { display: flex; min-height: 100vh; }
+    nav {
+      width: 220px;
+      background: var(--sidebar);
+      color: #94a3b8;
+      padding: 32px 0;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      flex-shrink: 0;
+    }
+    nav h3 { color: #f1f5f9; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; padding: 0 20px 12px; }
+    nav a { display: block; padding: 6px 20px; color: #94a3b8; text-decoration: none; font-size: 13px; font-family: sans-serif; }
+    nav a:hover { color: #f1f5f9; background: rgba(255,255,255,0.05); }
+    nav .nav-section { margin-bottom: 20px; }
+    main { flex: 1; max-width: 780px; padding: 56px 64px; }
+    .lesson-meta { font-family: sans-serif; font-size: 12px; color: #64748b; margin-bottom: 32px; }
+    .lesson-meta span { margin-right: 16px; }
+    h1 { font-size: 32px; font-weight: 700; margin-bottom: 8px; line-height: 1.2; }
+    h2 { font-size: 20px; font-weight: 700; margin: 40px 0 12px; padding-bottom: 6px; border-bottom: 2px solid var(--border); }
+    h3 { font-size: 16px; font-weight: 700; margin: 24px 0 8px; color: #334155; }
+    p { margin-bottom: 14px; }
+    a { color: var(--accent); }
+    code { font-family: 'Menlo', 'Monaco', monospace; font-size: 13px; background: var(--code-bg); padding: 2px 5px; border-radius: 3px; }
+    pre {
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 20px 24px;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin: 16px 0;
+      font-family: 'Menlo', 'Monaco', monospace;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    pre .comment { color: #64748b; }
+    pre .keyword { color: #93c5fd; }
+    pre .string { color: #86efac; }
+    pre .func { color: #fde68a; }
+    pre .type { color: #f9a8d4; }
+    .callout {
+      border-left: 4px solid var(--accent);
+      background: var(--accent-light);
+      padding: 14px 18px;
+      margin: 20px 0;
+      border-radius: 0 6px 6px 0;
+      font-size: 14px;
+    }
+    .callout.warn { border-color: var(--warn); background: var(--warn-light); }
+    .callout.success { border-color: var(--success); background: var(--success-light); }
+    .callout.danger { border-color: var(--danger); background: var(--danger-light); }
+    .callout strong { display: block; margin-bottom: 4px; font-family: sans-serif; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .compare {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin: 16px 0;
+    }
+    .compare-box { background: var(--code-bg); border-radius: 8px; padding: 14px; }
+    .compare-box h4 { font-family: sans-serif; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; color: #64748b; }
+    table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px; font-family: sans-serif; }
+    th { background: var(--code-bg); text-align: left; padding: 8px 12px; border-bottom: 2px solid var(--border); font-size: 12px; }
+    td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    tr:hover td { background: var(--accent-light); }
+
+    /* Flow diagram */
+    .flow { font-family: sans-serif; font-size: 13px; margin: 16px 0; }
+    .flow-step { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-bottom: 1px dashed var(--border); }
+    .flow-step .num { background: var(--accent); color: white; border-radius: 50%; width: 22px; height: 22px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
+
+    /* Quiz */
+    .quiz-section { background: var(--code-bg); border-radius: 10px; padding: 24px; margin: 32px 0; }
+    .quiz-section h2 { border: none; margin-top: 0; }
+    .quiz-q { margin-bottom: 24px; }
+    .quiz-q p { font-weight: 600; margin-bottom: 10px; font-size: 15px; }
+    .quiz-options { display: grid; gap: 8px; }
+    .quiz-opt { display: block; background: white; border: 2px solid var(--border); border-radius: 6px; padding: 10px 14px; cursor: pointer; font-size: 14px; transition: all 0.15s; text-align: left; width: 100%; font-family: sans-serif; }
+    .quiz-opt:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-light); }
+    .quiz-opt.correct { border-color: #16a34a; background: var(--success-light); color: #16a34a; font-weight: 600; }
+    .quiz-opt.wrong { border-color: var(--danger); background: var(--danger-light); color: var(--danger); }
+    .quiz-opt:disabled { cursor: default; }
+    .quiz-feedback { margin-top: 8px; font-size: 13px; display: none; padding: 8px 12px; border-radius: 4px; background: white; border: 1px solid var(--border); }
+    .quiz-score { text-align: center; font-size: 18px; font-weight: 700; padding: 16px; border-radius: 8px; display: none; margin-top: 16px; font-family: sans-serif; }
+    .quiz-score.good { background: var(--success-light); color: var(--success); }
+    .quiz-score.ok { background: var(--warn-light); color: var(--warn); }
+    .inline-quiz { background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 14px 18px; margin: 20px 0; }
+    .inline-quiz p { margin-bottom: 8px; font-weight: 600; font-size: 14px; }
+    .inline-quiz input { border: 2px solid var(--border); border-radius: 4px; padding: 6px 10px; font-size: 13px; font-family: monospace; width: 100%; max-width: 360px; margin-bottom: 8px; }
+    .inline-quiz button { background: var(--accent); color: white; border: none; border-radius: 4px; padding: 6px 14px; cursor: pointer; font-size: 13px; font-family: sans-serif; }
+    .inline-quiz .feedback { font-size: 13px; margin-top: 6px; display: none; }
+    .inline-quiz .feedback.ok { color: var(--success); }
+    .inline-quiz .feedback.bad { color: var(--danger); }
+    .inline-quiz .opts { display: grid; gap: 6px; margin-bottom: 8px; }
+    .inline-quiz .opt-btn { background: white; border: 2px solid var(--border); border-radius: 5px; padding: 8px 12px; cursor: pointer; font-size: 13px; font-family: sans-serif; text-align: left; }
+    .inline-quiz .opt-btn:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-light); }
+    .inline-quiz .opt-btn.correct { border-color: var(--success); background: var(--success-light); color: var(--success); font-weight: 600; }
+    .inline-quiz .opt-btn.wrong { border-color: var(--danger); background: var(--danger-light); color: var(--danger); }
+
+    .primary-source { background: white; border: 1px solid var(--border); border-radius: 8px; padding: 18px; margin: 18px 0; font-family: sans-serif; }
+    .primary-source .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; margin-bottom: 6px; }
+    .primary-source .title { font-size: 16px; font-weight: 700; color: var(--accent); margin-bottom: 4px; }
+    .primary-source .desc { font-size: 13px; color: #64748b; }
+
+    .nav-links { font-family: sans-serif; font-size: 13px; display: flex; gap: 16px; margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--border); }
+    .nav-links a { color: var(--accent); }
+    .ask-me { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 14px 18px; margin: 32px 0; font-family: sans-serif; font-size: 14px; }
+    .ask-me strong { color: #0369a1; }
+    .script-box { background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; margin: 16px 0; font-size: 14px; }
+    .script-box .role { font-family: sans-serif; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; margin-bottom: 6px; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <nav>
+    <div class="nav-section">
+      <h3>本课导航</h3>
+      <a href="#link">开篇连接</a>
+      <a href="#pre">前置检查</a>
+      <a href="#params">一、七大核心参数</a>
+      <a href="#flow">二、任务执行流程</a>
+      <a href="#reject">三、四种拒绝策略</a>
+      <a href="#queue">四、工作队列选型</a>
+      <a href="#sizing">五、线程数估算</a>
+      <a href="#executors">六、Executors 为何被禁</a>
+      <a href="#lifecycle">七、生命周期与异常</a>
+      <a href="#crosslang">八、Go 跨语言对照</a>
+      <a href="#interview">九、面试话术</a>
+      <a href="#quiz">十、检索练习</a>
+      <a href="#action">课后行动</a>
+    </div>
+    <div class="nav-section">
+      <h3>课程系列</h3>
+      <a href="0001-agent-tool-use-fundamentals.html">01 Tool Use</a>
+      <a href="0002-mcp-protocol-go.html">02 MCP + Go</a>
+      <a href="0003-jvm-gc-deep-dive.html">03 JVM GC</a>
+      <a href="0004-agent-memory-rag.html">04 Memory + RAG</a>
+      <a href="0005-go-concurrency.html">05 Go 并发</a>
+      <a href="0006-java-thread-pool.html" style="color:#f1f5f9;font-weight:700">06 Java 线程池 ←</a>
+    </div>
+    <div class="nav-section">
+      <h3>参考文档</h3>
+      <a href="../reference/jvm-gc-cheatsheet.html">JVM GC 速查</a>
+    </div>
+  </nav>
+
+  <main>
+    <div class="lesson-meta">
+      <span>Lesson 06</span>
+      <span>Java 线程池</span>
+      <span>进阶</span>
+      <span>~30 分钟</span>
+    </div>
+
+    <h1>Java 线程池：核心原理与面试实战</h1>
+
+    <!-- 开篇连接 -->
+    <p id="link" style="font-size:15px;color:#64748b;margin-bottom:32px">
+      <code>ThreadPoolExecutor</code> 是高级 Java 面试的<strong>必考母题</strong>，几乎每场面试都会从"七大参数 + 提交流程"切入再延展。本课把你简历里"高并发批处理（线程池控制、批量 insert）"这条隐性经验升级成可讲述的原理，并直接作为 GitHub 项目 <code>batch-import-optimizer</code> 的理论地基。学完后你能把一次"批量 insert 把库打挂"的事故，讲成线程池 + 背压的 STAR 架构故事。
+    </p>
+
+    <!-- 前置检查 -->
+    <h2 id="pre">前置检查（先验证地基）</h2>
+    <p>线程池的所有"为什么"都建立在"线程很贵"这个前提上。先确认两点再往下。</p>
+
+    <div class="inline-quiz">
+      <p>1. 为什么"线程的创建成本高"是线程池存在的根本理由？（选最准确的）</p>
+      <div class="opts">
+        <button class="opt-btn" onclick="checkOpt(this,'pre1',false)">A. 线程对象本身占用大量堆内存，创建慢</button>
+        <button class="opt-btn" onclick="checkOpt(this,'pre1',true)">B. 每个线程要分配独立栈内存（默认约 1MB），创建/销毁要陷入内核态做系统调用，且过多线程导致大量上下文切换</button>
+        <button class="opt-btn" onclick="checkOpt(this,'pre1',false)">C. 线程多了会触发 Full GC</button>
+      </div>
+      <div class="feedback" id="pre1-fb"></div>
+    </div>
+
+    <div class="inline-quiz">
+      <p>2. <code>BlockingQueue</code> 的 <code>put()</code> 在队列满时会怎样？</p>
+      <div class="opts">
+        <button class="opt-btn" onclick="checkOpt(this,'pre2',false)">A. 立即抛出异常</button>
+        <button class="opt-btn" onclick="checkOpt(this,'pre2',false)">B. 返回 false，丢弃元素</button>
+        <button class="opt-btn" onclick="checkOpt(this,'pre2',true)">C. 阻塞当前线程，直到队列有空位</button>
+      </div>
+      <div class="feedback" id="pre2-fb"></div>
+    </div>
+
+    <div class="callout">
+      <strong>三秒回顾</strong>
+      <code>Runnable</code> 无返回值、不能抛受检异常；<code>Callable&lt;V&gt;</code> 有返回值、可抛异常；<code>Future&lt;V&gt;</code> 是异步结果的句柄（<code>get()</code> 阻塞拿结果）。线程栈在堆外、每个线程独占——这正是"线程数过多压垮内存"（衔接 <a href="0003-jvm-gc-deep-dive.html">Lesson 03</a>）的原因。两题都答对，进入正题。
+    </div>
+
+    <!-- ① 七大参数 -->
+    <h2 id="params">一、ThreadPoolExecutor 七大核心参数</h2>
+    <p>所有工厂方法最终都落到这个全参构造器。面试不要背名字，要能讲"是什么 + 为什么需要它"。</p>
+    <pre><span class="keyword">public</span> <span class="type">ThreadPoolExecutor</span>(
+    <span class="type">int</span> corePoolSize,              <span class="comment">// 核心线程数：常驻不回收</span>
+    <span class="type">int</span> maximumPoolSize,           <span class="comment">// 最大线程数：核心 + 临时线程上限</span>
+    <span class="type">long</span> keepAliveTime,            <span class="comment">// 非核心线程空闲多久后回收</span>
+    <span class="type">TimeUnit</span> unit,                <span class="comment">// keepAliveTime 的时间单位</span>
+    <span class="type">BlockingQueue</span>&lt;<span class="type">Runnable</span>&gt; workQueue, <span class="comment">// 任务排队的阻塞队列</span>
+    <span class="type">ThreadFactory</span> threadFactory,  <span class="comment">// 创建线程（命名/优先级/守护标记）</span>
+    <span class="type">RejectedExecutionHandler</span> handler <span class="comment">// 拒绝策略：池满+队列满时怎么办</span>
+)</pre>
+
+    <table>
+      <tr><th>参数</th><th>是什么 / 为什么</th></tr>
+      <tr><td>corePoolSize</td><td>核心线程数，默认即使空闲也常驻（除非 <code>allowCoreThreadTimeOut(true)</code>）。决定"稳态吞吐"。</td></tr>
+      <tr><td>maximumPoolSize</td><td>线程总数上限。只有队列<strong>满了</strong>才会创建到这个数的临时线程，应对突发流量。</td></tr>
+      <tr><td>keepAliveTime + unit</td><td>临时（非核心）线程空闲超时后被回收，避免突发过后线程白占资源。</td></tr>
+      <tr><td>workQueue</td><td>核心线程都忙时任务排队的地方。<strong>有界还是无界，直接决定会不会 OOM</strong>——本课重点。</td></tr>
+      <tr><td>threadFactory</td><td>自定义线程名（如 <code>batch-import-%d</code>）极利于线上排查；可设守护线程、未捕获异常处理器。</td></tr>
+      <tr><td>handler</td><td>队列满 + 线程到 max 后的兜底策略，四选一，决定"丢数据还是降速"。</td></tr>
+    </table>
+
+    <div class="callout warn">
+      <strong>面试加分点</strong>
+      自定义 <code>ThreadFactory</code> 给线程起业务名，是区分初级/高级的细节。线上 jstack 时一眼看到 <code>batch-import-3</code> 而不是 <code>pool-1-thread-3</code>，定位效率天差地别。
+    </div>
+
+    <div class="inline-quiz">
+      <p>临时（非核心）线程在什么条件下才会被创建？</p>
+      <div class="opts">
+        <button class="opt-btn" onclick="checkOpt(this,'p1',false)">A. 核心线程一忙就立刻创建临时线程</button>
+        <button class="opt-btn" onclick="checkOpt(this,'p1',true)">B. 核心线程都忙 且 工作队列已满，才创建临时线程直到 max</button>
+        <button class="opt-btn" onclick="checkOpt(this,'p1',false)">C. 提交任务数超过 corePoolSize 就创建</button>
+      </div>
+      <div class="feedback" id="p1-fb"></div>
+    </div>
+
+    <!-- ② 执行流程 -->
+    <h2 id="flow">二、任务提交后的执行流程（含反直觉点）</h2>
+    <p>这是整道题的灵魂。一个任务 <code>execute(task)</code> 进来，内部按下面顺序流转：</p>
+    <div class="flow">
+      <div class="flow-step"><span class="num">1</span><div><strong>当前线程数 &lt; corePoolSize</strong> → 直接<strong>新建核心线程</strong>执行（哪怕有空闲核心线程也优先建满核心数）。</div></div>
+      <div class="flow-step"><span class="num">2</span><div><strong>核心线程已满</strong> → 任务<strong>进入 workQueue 排队</strong>，<em>不</em>立即扩容。</div></div>
+      <div class="flow-step"><span class="num">3</span><div><strong>队列也满了</strong> → 创建<strong>临时（非核心）线程</strong>，直到线程数达 maximumPoolSize。</div></div>
+      <div class="flow-step"><span class="num">4</span><div><strong>线程数已到 max 且队列仍满</strong> → 触发 <strong>拒绝策略 handler</strong>。</div></div>
+    </div>
+
+    <div class="callout danger">
+      <strong>反直觉点（高频追问）</strong>
+      "队列优先于扩容"。很多人以为线程会先扩到 max 再排队，<strong>实际相反</strong>：核心满了先排队，<strong>队列满了才扩容</strong>。
+      推论：如果用<strong>无界队列</strong>（如默认 <code>LinkedBlockingQueue</code>），队列永远填不满 → <code>maximumPoolSize</code> 永远<strong>形同虚设</strong>，拒绝策略也永远不触发，任务无限堆积直到 OOM。
+    </div>
+
+    <p>用一个具体例子（面试现场最爱让你推）：<code>core=2, max=4, queue 容量=2</code>，依次提交任务 T1…T7：</p>
+    <table>
+      <tr><th>提交</th><th>系统动作</th><th>活跃线程</th><th>队列占用</th></tr>
+      <tr><td>T1</td><td>建核心线程1执行</td><td>1</td><td>0</td></tr>
+      <tr><td>T2</td><td>建核心线程2执行</td><td>2</td><td>0</td></tr>
+      <tr><td>T3</td><td>核心满 → 入队</td><td>2</td><td>1</td></tr>
+      <tr><td>T4</td><td>入队</td><td>2</td><td>2（满）</td></tr>
+      <tr><td>T5</td><td>队列满 → 建临时线程3</td><td>3</td><td>2</td></tr>
+      <tr><td>T6</td><td>建临时线程4（到 max）</td><td>4</td><td>2</td></tr>
+      <tr><td><strong>T7</strong></td><td><strong>线程到 max + 队列满 → 拒绝策略</strong></td><td>4</td><td>2</td></tr>
+    </table>
+
+    <div class="inline-quiz">
+      <p>同样配置 <code>core=2, max=4, queue=2</code>，第几个任务<strong>首次</strong>触发拒绝策略？</p>
+      <div class="opts">
+        <button class="opt-btn" onclick="checkOpt(this,'f1',false)">A. 第 5 个</button>
+        <button class="opt-btn" onclick="checkOpt(this,'f1',false)">B. 第 6 个</button>
+        <button class="opt-btn" onclick="checkOpt(this,'f1',true)">C. 第 7 个（最大承载 = max + queue = 4 + 2 = 6，第 7 个被拒）</button>
+      </div>
+      <div class="feedback" id="f1-fb"></div>
+    </div>
+
+    <!-- ③ 拒绝策略 -->
+    <h2 id="reject">三、四种内置拒绝策略</h2>
+    <table>
+      <tr><th>策略</th><th>行为</th><th>适用场景</th></tr>
+      <tr><td><code>AbortPolicy</code>（默认）</td><td>直接抛 <code>RejectedExecutionException</code></td><td>需要让调用方立刻感知失败、快速失败的场景</td></tr>
+      <tr><td><code>CallerRunsPolicy</code></td><td>由<strong>提交任务的线程</strong>自己执行该任务</td><td><strong>背压</strong>：生产者被迫降速，不丢数据。批量导入首选</td></tr>
+      <tr><td><code>DiscardPolicy</code></td><td>静默丢弃新任务，不抛异常</td><td>允许丢、且丢了无所谓的场景（如可重算的统计）</td></tr>
+      <tr><td><code>DiscardOldestPolicy</code></td><td>丢弃队首最老任务，再尝试提交新任务</td><td>只关心最新数据（如实时行情、最新心跳）</td></tr>
+    </table>
+
+    <div class="callout success">
+      <strong>背压的本质</strong>
+      <code>CallerRunsPolicy</code> 妙在：当池子打满，提交线程（比如读 CSV 的主线程）被拉去执行任务，<strong>暂时停止往池子塞新任务</strong>。生产速度被自动压到消费速度——这就是"背压"，对应 <a href="0005-go-concurrency.html">Lesson 05</a> 里 buffered channel 满了发送方阻塞的同一思想。
+    </div>
+
+    <div class="inline-quiz">
+      <p>TP-LINK 批量导入设备：要求"不丢任何一条数据 + 池满时自动降速"，选哪个拒绝策略？</p>
+      <div class="opts">
+        <button class="opt-btn" onclick="checkOpt(this,'r1',false)">A. AbortPolicy，抛异常后重试</button>
+        <button class="opt-btn" onclick="checkOpt(this,'r1',true)">B. CallerRunsPolicy，提交线程自己执行，天然降速且不丢数据</button>
+        <button class="opt-btn" onclick="checkOpt(this,'r1',false)">C. DiscardOldestPolicy，丢老任务腾位置</button>
+      </div>
+      <div class="feedback" id="r1-fb"></div>
+    </div>
+
+    <!-- ④ 队列选型 -->
+    <h2 id="queue">四、工作队列选型（OOM 的根因就在这）</h2>
+    <table>
+      <tr><th>队列</th><th>特性</th><th>风险 / 用途</th></tr>
+      <tr><td><code>ArrayBlockingQueue</code></td><td><strong>有界</strong>，构造时必须给容量</td><td><strong>生产推荐</strong>。容量可控，配合 max + 拒绝策略形成完整背压</td></tr>
+      <tr><td><code>LinkedBlockingQueue</code></td><td>默认<strong>无界</strong>（容量 Integer.MAX_VALUE）</td><td><strong>OOM 陷阱</strong>。任务无限堆积，max 失效。必须显式传容量才安全</td></tr>
+      <tr><td><code>SynchronousQueue</code></td><td>不存储元素，直接手递手</td><td><code>newCachedThreadPool</code> 配套，逼着线程数膨胀去接任务</td></tr>
+    </table>
+
+    <pre><span class="comment">// 生产级线程池：有界队列 + 命名 + 背压拒绝策略</span>
+<span class="type">ThreadPoolExecutor</span> executor = <span class="keyword">new</span> <span class="type">ThreadPoolExecutor</span>(
+    8, 16, 60L, <span class="type">TimeUnit</span>.SECONDS,
+    <span class="keyword">new</span> <span class="type">ArrayBlockingQueue</span>&lt;&gt;(200),          <span class="comment">// 有界！</span>
+    <span class="keyword">new</span> <span class="type">ThreadFactoryBuilder</span>()
+        .<span class="func">setNameFormat</span>(<span class="string">"batch-import-%d"</span>).<span class="func">build</span>(), <span class="comment">// 业务命名</span>
+    <span class="keyword">new</span> <span class="type">ThreadPoolExecutor</span>.<span class="type">CallerRunsPolicy</span>()       <span class="comment">// 背压</span>
+);</pre>
+
+    <!-- ⑤ 线程数估算 -->
+    <h2 id="sizing">五、线程数估算（背推导，不背公式）</h2>
+    <p>核心直觉：线程在<strong>等待</strong>时不占 CPU，所以等待越多 → 可以开越多线程把 CPU 喂饱。</p>
+    <div class="compare">
+      <div class="compare-box">
+        <h4>CPU 密集</h4>
+        <p style="font-size:13px">线程几乎一直占 CPU。线程数 ≈ <strong>N + 1</strong>（N = 核心数）。+1 是为某个线程偶尔缺页中断时顶上，让 CPU 不空转。</p>
+      </div>
+      <div class="compare-box">
+        <h4>IO 密集</h4>
+        <p style="font-size:13px">线程大量时间在等 DB / 网络。线程数 ≈ <strong>N × (1 + 等待时间/计算时间)</strong>。等待占比越高，线程越多。</p>
+      </div>
+    </div>
+
+    <div class="callout">
+      <strong>推导示例（面试让你现场算）</strong>
+      8 核机器，每个任务 = 10ms 计算 + 90ms 等 DB。等待/计算 = 90/10 = 9。
+      线程数 ≈ 8 × (1 + 9) = <strong>80</strong>。直觉解释：单线程 100ms 里只有 10ms 用 CPU，要喂满 1 个核需要约 10 个这样的线程，8 核 → 约 80。
+      <br>实战收尾："公式给的是数量级，最终要靠压测在 80 上下调，并结合下游 DB 连接池上限——线程开太多反而压垮 DB。"
+    </div>
+
+    <div class="inline-quiz">
+      <p>4 核机器，任务 = 20ms 计算 + 80ms 等待，IO 密集线程数约为？</p>
+      <div class="opts">
+        <button class="opt-btn" onclick="checkOpt(this,'s1',false)">A. 约 5（4 + 1）</button>
+        <button class="opt-btn" onclick="checkOpt(this,'s1',true)">B. 约 20（4 × (1 + 80/20) = 4 × 5）</button>
+        <button class="opt-btn" onclick="checkOpt(this,'s1',false)">C. 约 320</button>
+      </div>
+      <div class="feedback" id="s1-fb"></div>
+    </div>
+
+    <!-- ⑥ Executors 被禁 -->
+    <h2 id="executors">六、Executors 四工厂为何被《阿里规约》禁用</h2>
+    <table>
+      <tr><th>工厂方法</th><th>底层配置</th><th>根因</th></tr>
+      <tr><td><code>newFixedThreadPool</code></td><td>无界 LinkedBlockingQueue</td><td>队列无限堆积 → <strong>OOM</strong></td></tr>
+      <tr><td><code>newSingleThreadExecutor</code></td><td>无界 LinkedBlockingQueue</td><td>同上，OOM</td></tr>
+      <tr><td><code>newCachedThreadPool</code></td><td>max = Integer.MAX_VALUE + SynchronousQueue</td><td>线程数无上限 → <strong>线程爆炸 / OOM</strong></td></tr>
+      <tr><td><code>newScheduledThreadPool</code></td><td>max = Integer.MAX_VALUE</td><td>线程数无上限</td></tr>
+    </table>
+
+    <div class="callout danger">
+      <strong>一句话根因</strong>
+      要么<strong>队列无界</strong>（Fixed/Single → 任务堆到 OOM），要么<strong>线程无界</strong>（Cached/Scheduled → 线程堆到 OOM）。两类都缺了"边界"。<strong>正解：手写 <code>ThreadPoolExecutor</code>，显式给有界队列 + 合理 max + 拒绝策略。</strong>
+    </div>
+
+    <div class="inline-quiz">
+      <p><code>newFixedThreadPool(10)</code> 为什么会 OOM？根因在哪个参数？</p>
+      <div class="opts">
+        <button class="opt-btn" onclick="checkOpt(this,'e1',false)">A. 10 个线程太多，栈内存溢出</button>
+        <button class="opt-btn" onclick="checkOpt(this,'e1',true)">B. workQueue 是无界 LinkedBlockingQueue，任务无限堆积撑爆堆内存</button>
+        <button class="opt-btn" onclick="checkOpt(this,'e1',false)">C. keepAliveTime 设成 0 导致线程不回收</button>
+      </div>
+      <div class="feedback" id="e1-fb"></div>
+    </div>
+
+    <!-- ⑦ 生命周期与异常 -->
+    <h2 id="lifecycle">七、生命周期与异常处理</h2>
+    <h3>execute vs submit（异常表现不同）</h3>
+    <table>
+      <tr><th></th><th>execute(Runnable)</th><th>submit(Callable/Runnable)</th></tr>
+      <tr><td>返回值</td><td>无</td><td>返回 <code>Future</code></td></tr>
+      <tr><td>未捕获异常</td><td>线程<strong>立即抛出</strong>，触发 <code>UncaughtExceptionHandler</code>，该工作线程被替换</td><td>异常被<strong>吞进 Future</strong>，只有调用 <code>future.get()</code> 时才抛出</td></tr>
+    </table>
+    <div class="callout warn">
+      <strong>面试陷阱</strong>
+      "线程池里任务抛异常，任务会丢吗？"——任务不会被重试，但<strong>线程不会因此泄漏</strong>：抛异常的工作线程被销毁并由池补一个新的。用 <code>submit</code> 时如果从不 <code>get()</code>，异常会被<strong>静默吞掉</strong>，是线上隐藏 bug 重灾区。
+    </div>
+
+    <h3>优雅关闭</h3>
+    <pre>executor.<span class="func">shutdown</span>();        <span class="comment">// 不收新任务，已提交的（含队列）继续跑完</span>
+<span class="keyword">if</span> (!executor.<span class="func">awaitTermination</span>(30, <span class="type">TimeUnit</span>.SECONDS)) {
+    executor.<span class="func">shutdownNow</span>();  <span class="comment">// 中断正在执行的线程，返回未执行任务 List</span>
+}</pre>
+    <table>
+      <tr><th></th><th>shutdown()</th><th>shutdownNow()</th></tr>
+      <tr><td>新任务</td><td>拒绝</td><td>拒绝</td></tr>
+      <tr><td>队列中任务</td><td>继续执行完</td><td>不执行，作为 List 返回</td></tr>
+      <tr><td>运行中任务</td><td>跑完</td><td>发 interrupt 尝试中断</td></tr>
+    </table>
+
+    <!-- ⑧ Go 对照 -->
+    <h2 id="crosslang">八、跨语言对照：Java 线程池 ↔ Go worker pool</h2>
+    <p>把 <a href="0005-go-concurrency.html">Lesson 05</a> 的 Go 并发原语和线程池部件一一对上，这是"副语言"面试叙事的杀手锏。</p>
+    <table>
+      <tr><th>Java 线程池</th><th>Go 等价物</th><th>共同语义</th></tr>
+      <tr><td>固定数量的工作线程</td><td>固定数量的 worker goroutine</td><td>受控并发度</td></tr>
+      <tr><td>有界 ArrayBlockingQueue</td><td>buffered channel（带容量）</td><td>排队 + 背压缓冲</td></tr>
+      <tr><td>CallerRunsPolicy（背压）</td><td>channel 满 → 发送方阻塞</td><td>生产者自动降速</td></tr>
+      <tr><td>shutdownNow + interrupt</td><td>context 取消（ctx.Done）</td><td>取消信号传播</td></tr>
+    </table>
+    <div class="callout success">
+      <strong>面试金句</strong>
+      "Java 用有界队列 + 拒绝策略显式做背压，Go 用 buffered channel 的天然阻塞隐式做背压——本质都是<strong>用边界把生产速度压到消费速度</strong>。我在 Java 批量导入和 Go 的 clickhouse-mcp-server 里用的是同一套受控并发心智模型。"
+    </div>
+
+    <!-- ⑨ 面试话术 -->
+    <h2 id="interview">九、面试话术（项目锚定）</h2>
+    <div class="callout">
+      <strong>高频问题</strong>
+      "讲一个你用线程池解决实际问题的经历。"
+    </div>
+    <div class="script-box">
+      <div class="role">STAR 完整叙事</div>
+      <p><strong>Situation：</strong>在 TP-LINK SD-WAN 网络管理后台，有个批量导入功能：运维一次上传几万台设备的配置 CSV，要批量写库。早期实现是来一条数据就 new 一个线程异步 insert。</p>
+      <p><strong>Task：</strong>压测时发现两个问题——一是高峰期线程数失控，机器线程数飙到几千，频繁上下文切换 CPU 打满；二是下游 MySQL 连接池被瞬间打爆，大量 insert 超时，甚至触发了一次 Full GC（线程栈 + 堆积对象一起放大了内存压力，这点结合我对 JVM GC 的理解）。</p>
+      <p><strong>Action：</strong>我把它改成手写的 <code>ThreadPoolExecutor</code>：corePoolSize 按 IO 密集公式估算（任务里大头是等 DB，约 N×(1+等待/计算)），配<strong>有界 ArrayBlockingQueue</strong> 控制堆积上限，拒绝策略选 <strong>CallerRunsPolicy</strong>——这样池子满了，读 CSV 的提交线程会被拉去执行 insert，自动停止读取，形成<strong>背压</strong>，把导入速度压到 DB 能扛的水平。同时自定义 ThreadFactory 把线程命名为 <code>batch-import-%d</code> 方便 jstack 排查，并配 <code>awaitTermination</code> 做优雅关闭保证已入队任务不丢。</p>
+      <p><strong>Result：</strong>线程数稳定在可控范围，DB 不再被打爆，导入吞吐反而因为不再抖动而提升。后来我把这套"受控并发 + 背压"的模式抽成了一个通用库 <code>batch-import-optimizer</code>。值得一提的是，我在 Go 的 clickhouse-mcp-server 里用 worker pool + buffered channel 复刻了同一套思想，所以这套心智模型是跨语言通用的。</p>
+    </div>
+
+    <div class="callout warn">
+      <strong>被追问时的弹药</strong>
+      <em>"为什么不用 newFixedThreadPool？"</em> → 它内部是无界 LinkedBlockingQueue，正是早期 OOM 风险的来源，《阿里规约》也明确禁用，所以手写。
+      <em>"core 设多少？"</em> → 不给死数字，讲 IO 密集推导 + "公式给数量级，最终压测定，并受 DB 连接池上限约束"。
+      <em>"为什么是 CallerRunsPolicy 不是 Abort？"</em> → 业务要求不丢数据且要自动降速，Abort 会丢任务、还要自己处理重试，CallerRuns 天然背压。
+    </div>
+
+    <!-- Primary Source -->
+    <div class="primary-source">
+      <div class="label">本课首选资源</div>
+      <div class="title"><a href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/util/concurrent/ThreadPoolExecutor.html" target="_blank">ThreadPoolExecutor — Java SE 17 API 官方文档</a></div>
+      <div class="desc">权威定义。开头那段 "Thread pools address two different problems" 把核心参数与执行流程讲得最准。背流程时以它为准。</div>
+    </div>
+    <div class="primary-source">
+      <div class="label">规范参考</div>
+      <div class="title"><a href="https://github.com/alibaba/p3c" target="_blank">Alibaba Java Coding Guidelines (P3C)</a></div>
+      <div class="desc">"并发处理"章节明确：线程池不允许用 Executors 创建，必须手写 ThreadPoolExecutor——记住这条原文出处，面试报出处显专业。</div>
+    </div>
+
+    <!-- Quiz -->
+    <div class="quiz-section" id="quiz">
+      <h2>🧠 检索练习</h2>
+      <p style="font-family:sans-serif;font-size:13px;color:#64748b;margin-bottom:20px">不看上方内容，凭记忆回答。答错不扣分，只帮你定位记忆空白。</p>
+
+      <div class="quiz-q" id="q1">
+        <p>1. 配置 <code>core=3, max=5, queue 容量=4</code>，依次提交任务，第几个任务首次触发拒绝策略？</p>
+        <div class="quiz-options">
+          <button class="quiz-opt" onclick="answer('q1','A')">A. 第 8 个</button>
+          <button class="quiz-opt" onclick="answer('q1','B')">B. 第 9 个</button>
+          <button class="quiz-opt" onclick="answer('q1','C')">C. 第 10 个（max 5 + queue 4 = 9，第 10 个被拒）</button>
+          <button class="quiz-opt" onclick="answer('q1','D')">D. 第 6 个</button>
+        </div>
+        <div class="quiz-feedback" id="q1-fb">最大承载 = maximumPoolSize + 队列容量 = 5 + 4 = 9。前 9 个都能被接住，第 10 个触发拒绝策略。注意是 max 不是 core。</div>
+      </div>
+
+      <div class="quiz-q" id="q2">
+        <p>2. <code>newFixedThreadPool</code> 为什么可能 OOM？根因是哪个参数？</p>
+        <div class="quiz-options">
+          <button class="quiz-opt" onclick="answer('q2','A')">A. maximumPoolSize 太大，线程爆炸</button>
+          <button class="quiz-opt" onclick="answer('q2','B')">B. workQueue 用了无界 LinkedBlockingQueue，任务无限堆积撑爆堆</button>
+          <button class="quiz-opt" onclick="answer('q2','C')">C. keepAliveTime 太短，线程频繁创建</button>
+          <button class="quiz-opt" onclick="answer('q2','D')">D. 拒绝策略默认 Discard，丢任务导致内存泄漏</button>
+        </div>
+        <div class="quiz-feedback" id="q2-fb">Fixed/Single 的根因都是无界队列。修复：换成有界 ArrayBlockingQueue + 合理 max + CallerRunsPolicy。Cached 的根因才是线程无界。</div>
+      </div>
+
+      <div class="quiz-q" id="q3">
+        <p>3. 批量导入要求"不丢数据 + 池满自动降速"，应选哪个拒绝策略？</p>
+        <div class="quiz-options">
+          <button class="quiz-opt" onclick="answer('q3','A')">A. AbortPolicy</button>
+          <button class="quiz-opt" onclick="answer('q3','B')">B. DiscardPolicy</button>
+          <button class="quiz-opt" onclick="answer('q3','C')">C. CallerRunsPolicy</button>
+          <button class="quiz-opt" onclick="answer('q3','D')">D. DiscardOldestPolicy</button>
+        </div>
+        <div class="quiz-feedback" id="q3-fb">CallerRunsPolicy 让提交线程自己执行任务，提交线程被占住就停止往池里塞新任务，天然背压且不丢数据。Discard 系列会丢，Abort 会抛异常丢任务。</div>
+      </div>
+
+      <div class="quiz-q" id="q4">
+        <p>4. 8 核机器，任务 = 10ms 计算 + 90ms 等 DB，IO 密集线程数约为？</p>
+        <div class="quiz-options">
+          <button class="quiz-opt" onclick="answer('q4','A')">A. 约 9（8 + 1）</button>
+          <button class="quiz-opt" onclick="answer('q4','B')">B. 约 80（8 × (1 + 90/10)）</button>
+          <button class="quiz-opt" onclick="answer('q4','C')">C. 约 16（8 × 2）</button>
+          <button class="quiz-opt" onclick="answer('q4','D')">D. 约 720</button>
+        </div>
+        <div class="quiz-feedback" id="q4-fb">IO 密集 ≈ N×(1 + 等待/计算) = 8×(1 + 90/10) = 8×10 = 80。N+1 是 CPU 密集公式。最终仍需压测并受 DB 连接池约束。</div>
+      </div>
+
+      <div class="quiz-q" id="q5">
+        <p>5. 任务提交流程中，"队列优先于扩容"这个反直觉点的正确描述是？</p>
+        <div class="quiz-options">
+          <button class="quiz-opt" onclick="answer('q5','A')">A. 先把线程扩到 max，max 满了才入队</button>
+          <button class="quiz-opt" onclick="answer('q5','B')">B. 核心满后先入队，队列满了才扩容到 max；所以无界队列会让 max 失效</button>
+          <button class="quiz-opt" onclick="answer('q5','C')">C. 核心、队列、扩容三者随机选一个</button>
+          <button class="quiz-opt" onclick="answer('q5','D')">D. 队列和线程同时增长，谁先满谁触发拒绝</button>
+        </div>
+        <div class="quiz-feedback" id="q5-fb">顺序是：核心线程 → 队列 → 临时线程到 max → 拒绝策略。因为队列满才扩容，所以无界队列下 maximumPoolSize 永远用不上，任务无限堆积导致 OOM。</div>
+      </div>
+
+      <div id="quiz-total-score" class="quiz-score"></div>
+    </div>
+
+    <!-- 课后行动 -->
+    <h2 id="action">课后行动（按重要性排序）</h2>
+    <ol style="padding-left:20px;font-size:15px;line-height:2">
+      <li>手写一个生产级 <code>ThreadPoolExecutor</code>：有界 <code>ArrayBlockingQueue(100)</code> + 自定义 <code>ThreadFactory</code> 命名 <code>batch-import-%d</code> + <code>CallerRunsPolicy</code>，跑通一个并发 insert 的 demo（20 分钟）。</li>
+      <li>写一个小实验：用 <code>core=2,max=4,queue=2</code> 提交 7 个 <code>sleep(1s)</code> 任务，打印线程名和拒绝事件，亲眼验证第 7 个被拒（15 分钟）。</li>
+      <li>把第 9 节的 STAR 话术录音口述一遍，控制在 90 秒内讲完，重点练"队列优先于扩容"和"CallerRunsPolicy 背压"两个采分点。</li>
+      <li>给 GitHub 项目 <code>batch-import-optimizer</code> 建仓，README 写清"受控并发 + 有界队列 + 背压"设计目标，把本课线程池作为理论地基。</li>
+      <li>读 <a href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/util/concurrent/ThreadPoolExecutor.html" target="_blank">ThreadPoolExecutor 官方文档</a>开头三段，对照本课流程图核对一遍措辞。</li>
+    </ol>
+
+    <div class="ask-me">
+      <strong>有问题？直接问你的老师。</strong><br>
+      对 <code>allowCoreThreadTimeOut</code>、prestartAllCoreThreads、动态调参（setCorePoolSize 运行时改）、或线程池监控指标（活跃数 / 队列堆积 / 拒绝计数）有疑问？在对话框里问，马上解答。
+    </div>
+
+    <div class="nav-links">
+      <a href="0005-go-concurrency.html">← Lesson 05: Go 并发</a>
+      <span style="color:#94a3b8">Lesson 07 coming next →</span>
+    </div>
+  </main>
+</div>
+
+<script>
+  const answers = { q1:'C', q2:'B', q3:'C', q4:'B', q5:'B' };
+  const scores = {};
+
+  function answer(qid, choice) {
+    const opts = document.querySelectorAll(`#${qid} .quiz-opt`);
+    opts.forEach(o => o.disabled = true);
+    const selected = opts[['A','B','C','D'].indexOf(choice)];
+    const correct = answers[qid];
+    if (choice === correct) {
+      selected.classList.add('correct');
+      scores[qid] = 1;
+    } else {
+      selected.classList.add('wrong');
+      opts[['A','B','C','D'].indexOf(correct)].classList.add('correct');
+      scores[qid] = 0;
+    }
+    const fb = document.getElementById(`${qid}-fb`);
+    fb.style.display = 'block';
+    updateTotal();
+  }
+
+  function updateTotal() {
+    const total = Object.keys(answers).length;
+    const got = Object.values(scores).reduce((a,b)=>a+b,0);
+    if (Object.keys(scores).length === total) {
+      const el = document.getElementById('quiz-total-score');
+      el.style.display = 'block';
+      el.textContent = `得分：${got}/${total}` + (got === total ? '  🎉 全对，线程池这道母题你拿下了' : '');
+      el.className = 'quiz-score ' + (got >= 4 ? 'good' : 'ok');
+    }
+  }
+
+  function checkOpt(btn, qid, isCorrect) {
+    const parent = btn.closest('.opts');
+    parent.querySelectorAll('.opt-btn').forEach(b => b.disabled = true);
+    const fb = document.getElementById(`${qid}-fb`);
+    fb.style.display = 'block';
+    if (isCorrect) {
+      btn.classList.add('correct');
+      fb.className = 'feedback ok';
+      fb.textContent = '✓ 正确，继续往下。';
+    } else {
+      btn.classList.add('wrong');
+      parent.querySelectorAll('.opt-btn').forEach(b => {
+        if (b.getAttribute('onclick').includes('true')) b.classList.add('correct');
+      });
+      fb.className = 'feedback bad';
+      fb.textContent = '✗ 再想想——绿色那项才对。';
+    }
+  }
+</script>
+</body>
+</html>
