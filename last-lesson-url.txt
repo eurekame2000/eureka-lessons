@@ -1,0 +1,1 @@
+https://eurekame2000.github.io/eureka-lessons/lessons/0007-threadlocal-internals.html

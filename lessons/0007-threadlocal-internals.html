@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 07 — ThreadLocal 深度：线程池复用的定时炸弹</title>
+<style>
+  :root {
+    --ink: #1a1a1a;
+    --muted: #555;
+    --accent: #c0392b;
+    --accent2: #2980b9;
+    --bg: #fafaf8;
+    --card: #ffffff;
+    --border: #e0ddd8;
+    --code-bg: #f4f1eb;
+    --warn: #fff3cd;
+    --warn-border: #ffc107;
+    --success: #d4edda;
+    --success-border: #28a745;
+    --danger: #f8d7da;
+    --danger-border: #dc3545;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Georgia', 'Times New Roman', serif;
+    font-size: 17px;
+    line-height: 1.75;
+    color: var(--ink);
+    background: var(--bg);
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 48px 24px 80px;
+  }
+  h1 { font-size: 2rem; font-weight: 700; margin-bottom: 0.3em; }
+  h2 { font-size: 1.35rem; font-weight: 700; margin: 2.2em 0 0.7em; border-bottom: 2px solid var(--border); padding-bottom: 0.3em; }
+  h3 { font-size: 1.1rem; font-weight: 700; margin: 1.6em 0 0.5em; }
+  p { margin-bottom: 1em; }
+  ul, ol { margin: 0.5em 0 1em 1.5em; }
+  li { margin-bottom: 0.3em; }
+  a { color: var(--accent2); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .meta { color: var(--muted); font-family: monospace; font-size: 0.85rem; margin-bottom: 2em; }
+  .nav { font-family: monospace; font-size: 0.8rem; margin-bottom: 2.5em; color: var(--muted); }
+  .nav a { color: var(--accent2); }
+
+  code {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+    font-size: 0.88em;
+    background: var(--code-bg);
+    padding: 0.1em 0.35em;
+    border-radius: 3px;
+  }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent);
+    border-radius: 4px;
+    padding: 1.2em 1.4em;
+    overflow-x: auto;
+    margin: 1.2em 0;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.84em;
+    line-height: 1.6;
+  }
+  pre code { background: none; padding: 0; font-size: inherit; }
+
+  .callout {
+    border-radius: 6px;
+    padding: 1em 1.2em;
+    margin: 1.2em 0;
+    border-left: 5px solid;
+  }
+  .callout.warn { background: var(--warn); border-color: var(--warn-border); }
+  .callout.danger { background: var(--danger); border-color: var(--danger-border); }
+  .callout.tip { background: var(--success); border-color: var(--success-border); }
+  .callout.info { background: #e8f4fd; border-color: var(--accent2); }
+  .callout strong { display: block; margin-bottom: 0.3em; }
+
+  .diagram {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1.4em;
+    margin: 1.4em 0;
+    font-family: monospace;
+    font-size: 0.82em;
+    line-height: 1.8;
+    overflow-x: auto;
+    white-space: pre;
+  }
+
+  /* Quiz */
+  .quiz-section {
+    background: var(--card);
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    padding: 2em;
+    margin: 2.5em 0;
+  }
+  .quiz-section h2 { border: none; margin-top: 0; }
+  .question {
+    margin-bottom: 2em;
+    padding-bottom: 1.5em;
+    border-bottom: 1px solid var(--border);
+  }
+  .question:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+  .q-text { font-weight: 700; margin-bottom: 0.8em; }
+  .options { display: grid; gap: 0.5em; }
+  .option {
+    display: block;
+    padding: 0.6em 1em;
+    border: 2px solid var(--border);
+    border-radius: 5px;
+    cursor: pointer;
+    background: white;
+    font-family: inherit;
+    font-size: 0.95em;
+    text-align: left;
+    transition: border-color 0.15s, background 0.15s;
+    width: 100%;
+  }
+  .option:hover { border-color: var(--accent2); background: #f0f7ff; }
+  .option.correct { border-color: #28a745; background: #d4edda; font-weight: 600; }
+  .option.wrong { border-color: #dc3545; background: #f8d7da; }
+  .feedback { margin-top: 0.8em; font-size: 0.9em; display: none; }
+  .feedback.show { display: block; }
+  .feedback.ok { color: #155724; }
+  .feedback.no { color: #721c24; }
+
+  .score-box {
+    text-align: center;
+    padding: 1.5em;
+    background: var(--code-bg);
+    border-radius: 8px;
+    margin-top: 1.5em;
+    display: none;
+  }
+  .score-box.show { display: block; }
+  .score-num { font-size: 2.5em; font-weight: 700; color: var(--accent); }
+
+  .interview-card {
+    background: #fff8f0;
+    border: 1px solid #f0a500;
+    border-left: 5px solid #f0a500;
+    border-radius: 6px;
+    padding: 1.2em 1.4em;
+    margin: 1.2em 0;
+  }
+  .interview-card .label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #a06000;
+    margin-bottom: 0.5em;
+  }
+
+  .checkpoint {
+    display: inline-block;
+    background: var(--accent);
+    color: white;
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 0.2em 0.6em;
+    border-radius: 3px;
+    margin-right: 0.4em;
+    vertical-align: middle;
+  }
+
+  footer {
+    margin-top: 4em;
+    padding-top: 2em;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 0.85em;
+  }
+  .ask-me {
+    background: #e8f4fd;
+    border: 1px solid var(--accent2);
+    border-radius: 6px;
+    padding: 1em 1.2em;
+    margin: 2em 0;
+    font-size: 0.92em;
+  }
+</style>
+</head>
+<body>
+
+<div class="nav">
+  <a href="0006-java-thread-pool.html">← Lesson 06: 线程池</a> &nbsp;|&nbsp;
+  <a href="../reference/">Reference Docs</a>
+</div>
+
+<h1>Lesson 07</h1>
+<h1 style="color:var(--accent);">ThreadLocal 深度：线程池复用的定时炸弹</h1>
+<div class="meta">
+  2026-06-20 &nbsp;·&nbsp; 衔接 Lesson 06（线程池）+ Lesson 03（JVM/WeakReference）&nbsp;·&nbsp; 预计 25 分钟
+</div>
+
+<div class="callout info">
+  <strong>本课目标</strong>
+  1. 理解 ThreadLocal 的内部结构（<code>ThreadLocalMap</code> + <code>WeakReference</code>）<br>
+  2. 能推导线程池复用下的脏数据 Bug 和内存泄漏路径<br>
+  3. 掌握正确修复模式，背出面试标准答案
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2>1. ThreadLocal 是什么——正确心智模型</h2>
+
+<p>ThreadLocal 不是"线程安全的共享变量"，而是<strong>每条线程独享一份变量副本</strong>。</p>
+
+<div class="diagram">Thread-A ──► ThreadLocalMap { k=threadLocal1 → v="user:alice" }
+Thread-B ──► ThreadLocalMap { k=threadLocal1 → v="user:bob"  }
+                              ↑
+                    同一个 ThreadLocal 对象，不同 Map
+</div>
+
+<p>每个 <code>Thread</code> 对象内部有一个字段 <code>threadLocals</code>，类型是 <code>ThreadLocal.ThreadLocalMap</code>。当你调用 <code>threadLocal.set(val)</code>，实际是：</p>
+<pre><code>// 伪代码，还原 JDK 实现
+Thread t = Thread.currentThread();
+ThreadLocalMap map = t.threadLocals;       // 拿到当前线程自己的 Map
+if (map == null) map = createMap(t, value);
+else map.set(this, value);                 // this = ThreadLocal 实例，作为 key</code></pre>
+
+<h3>Entry 的结构（关键！）</h3>
+
+<pre><code>// java.lang.ThreadLocal.ThreadLocalMap 内部类
+static class Entry extends WeakReference&lt;ThreadLocal&lt;?&gt;&gt; {
+    Object value;                          // 强引用持有 value
+    Entry(ThreadLocal&lt;?&gt; k, Object v) {
+        super(k);                          // key 是弱引用
+        value = v;                         // value 是强引用
+    }
+}</code></pre>
+
+<div class="callout tip">
+  <strong>记忆口诀：key 弱，value 强</strong>
+  这个非对称设计是内存泄漏的根源——稍后展开。
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2>2. 线程池复用 → 脏数据 Bug</h2>
+
+<p>线程池里的线程<strong>不会在任务结束后销毁</strong>，它会被复用处理下一个任务。</p>
+
+<div class="callout danger">
+  <strong>Bug 场景：用户 A 的数据出现在用户 B 的请求里</strong>
+  这是生产环境最隐蔽的数据串联 Bug，难以复现、难以定位。
+</div>
+
+<pre><code>// 反例：不清理的 ThreadLocal
+private static final ThreadLocal&lt;String&gt; USER_CTX = new ThreadLocal&lt;&gt;();
+
+// Task 1：用户 alice 的请求
+executor.submit(() -&gt; {
+    USER_CTX.set("alice");
+    doWork();
+    // 没有 remove()！线程归还给线程池
+});
+
+// Task 2：线程被复用，用户 bob 的请求
+executor.submit(() -&gt; {
+    // USER_CTX.get() 返回 "alice" ←── 脏数据！
+    String user = USER_CTX.get();
+    doWork();
+});</code></pre>
+
+<h3>脏数据时序图</h3>
+
+<div class="diagram">线程池 Thread-3：
+  [Task-Alice] set("alice") → doWork → 归还（未清理）
+  [Task-Bob]   get() ──────────────────────────── 返回 "alice"  ← BUG</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2>3. 内存泄漏路径——画图推理</h2>
+
+<p>比脏数据更难发现的是<strong>内存泄漏</strong>。路径分两段：</p>
+
+<h3>阶段一：key 被 GC</h3>
+
+<div class="diagram">GC Root
+  │
+  └──► Thread（核心线程，线程池不销毁它）
+         │
+         └──► threadLocals (ThreadLocalMap)
+                │
+                └──► Entry[]
+                       ├── key: WeakReference&lt;ThreadLocal&gt; ──► ThreadLocal 实例
+                       └── value: Object ──────────────────────────► [强引用，泄漏点]
+
+当外部没有强引用指向 ThreadLocal 实例时：
+  ThreadLocal 实例 ──── 仅剩 WeakReference ──── GC 可回收
+  → key 变为 null
+  → Entry 变成 {key=null, value=残留对象}  ← 无法被访问，也无法被 GC</div>
+
+<h3>阶段二：value 被强引用困住</h3>
+
+<p>Entry 里 key 是 null，但 <code>value</code> 是强引用，GC 无法回收 value（Thread 还活着 → ThreadLocalMap 活着 → Entry 活着 → value 活着）。</p>
+
+<div class="callout danger">
+  <strong>泄漏条件：三件事同时成立</strong>
+  ① 线程池核心线程长期存活（不销毁）<br>
+  ② ThreadLocal 对象没有外部强引用（或被置为 null）<br>
+  ③ 没有调用 <code>remove()</code>
+</div>
+
+<div class="callout info">
+  <strong>JDK 的补丁式修复（了解即可）</strong>
+  ThreadLocalMap 在 <code>get()</code>/<code>set()</code> 时会顺手清理 stale entry（key=null 的条目）。
+  但这是被动的，不能依赖它。主动 <code>remove()</code> 才是正解。
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2>4. 正确修复模式</h2>
+
+<h3>模式 A：try-finally remove（最通用）</h3>
+
+<pre><code>private static final ThreadLocal&lt;String&gt; USER_CTX = new ThreadLocal&lt;&gt;();
+
+public void handleRequest(String userId) {
+    try {
+        USER_CTX.set(userId);
+        doWork();
+    } finally {
+        USER_CTX.remove();   // 无论异常与否，必须清理
+    }
+}</code></pre>
+
+<div class="callout tip">
+  <strong>finally 块是唯一可靠位置</strong>
+  catch 块可能被跳过，在 try 末尾清理会因异常被绕过。
+</div>
+
+<h3>模式 B：封装成 AutoCloseable（更优雅）</h3>
+
+<pre><code>public class UserContext implements AutoCloseable {
+    private static final ThreadLocal&lt;String&gt; CTX = new ThreadLocal&lt;&gt;();
+
+    public UserContext(String userId) { CTX.set(userId); }
+    public static String get() { return CTX.get(); }
+
+    @Override
+    public void close() { CTX.remove(); }  // try-with-resources 自动调用
+}
+
+// 使用方
+try (UserContext ctx = new UserContext(userId)) {
+    doWork();  // 块内随时 UserContext.get()
+}              // 离开块自动 remove()</code></pre>
+
+<h3>模式 C：Spring 的 RequestContextHolder（框架层兜底）</h3>
+
+<p>Spring MVC 在 <code>DispatcherServlet</code> 里会在请求结束后调用 <code>RequestContextHolder.resetRequestAttributes()</code>，本质是清理线程本地的请求上下文。这是框架替你做了 remove()，但<strong>自定义 ThreadLocal 框架管不到</strong>。</p>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2>5. 进阶：父子线程传递问题</h2>
+
+<h3>InheritableThreadLocal — 父线程创建子线程时拷贝一次</h3>
+
+<pre><code>private static final InheritableThreadLocal&lt;String&gt; TRACE =
+    new InheritableThreadLocal&lt;&gt;();
+
+TRACE.set("trace-id-001");
+new Thread(() -&gt; {
+    System.out.println(TRACE.get()); // "trace-id-001" ← 继承自父线程
+}).start();</code></pre>
+
+<div class="callout warn">
+  <strong>InheritableThreadLocal 在线程池中失效</strong>
+  线程池里的线程是提前创建好的，<strong>不是在提交任务时新建</strong>，继承发生在线程创建时，不在任务提交时。
+  所以父线程提交任务后设置的值，线程池里的线程拿不到。
+</div>
+
+<h3>TransmittableThreadLocal (TTL) — 阿里开源，线程池正确透传</h3>
+
+<p>依赖：<code>com.alibaba:transmittable-thread-local</code></p>
+
+<pre><code>private static final TransmittableThreadLocal&lt;String&gt; TRACE =
+    new TransmittableThreadLocal&lt;&gt;();
+
+// 提交任务时包装一层
+executor.submit(TtlRunnable.get(() -&gt; {
+    System.out.println(TRACE.get()); // 正确拿到提交任务时的快照值
+}));</code></pre>
+
+<div class="callout tip">
+  <strong>使用场景</strong>
+  链路追踪（TraceId）、用户上下文（UserId/TenantId）在线程池异步任务中透传，用 TTL。
+  这是微服务链路追踪的标准方案。
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2>6. 面试标准答案框架</h2>
+
+<div class="interview-card">
+  <div class="label">面试题：ThreadLocal 内存泄漏的原因和解决方案？</div>
+  <p><strong>结构：原理 → 根因 → 修复 → 延伸</strong></p>
+  <ol>
+    <li><strong>原理</strong>：ThreadLocal 把数据存在 Thread 的 ThreadLocalMap 里，Entry 的 key 是 ThreadLocal 的弱引用，value 是强引用。</li>
+    <li><strong>根因</strong>：线程池里线程不销毁；ThreadLocal 对象外部强引用消失后，key 被 GC 为 null；但 value 仍被 Entry 强引用，无法回收，随线程生命周期长期驻留堆内存。</li>
+    <li><strong>修复</strong>：在 finally 块调用 <code>remove()</code>，或封装成 AutoCloseable。</li>
+    <li><strong>延伸</strong>：如需父子线程透传，用 TTL（TransmittableThreadLocal），不要用 InheritableThreadLocal（线程池里失效）。</li>
+  </ol>
+</div>
+
+<div class="interview-card">
+  <div class="label">面试题：为什么 key 是弱引用，而不是强引用？</div>
+  <p>如果 key 是强引用，ThreadLocal 对象外部不持有引用时，ThreadLocalMap 仍强引用它，ThreadLocal 永远无法 GC —— 泄漏更严重。弱引用至少让 key 能被 GC 回收，是"两害取其轻"的设计。但 value 的泄漏问题无法靠弱引用解决，只能靠 <code>remove()</code>。</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2>7. 知识地图——本课串联</h2>
+
+<div class="diagram">┌─────────────────────────────────────────────────────┐
+│                     本课知识点                       │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│  ThreadLocal                                        │
+│    ├── 存储位置：Thread.threadLocals (ThreadLocalMap)│
+│    ├── Entry: key=WeakRef&lt;TL&gt;, value=强引用         │
+│    ├── 脏数据：线程复用 + 未 remove()               │
+│    └── 内存泄漏：key GC null + value 强引用驻留     │
+│                                                     │
+│  Fix                                                │
+│    ├── try-finally remove()                         │
+│    ├── AutoCloseable 封装                           │
+│    └── TTL（线程池透传）                            │
+│                                                     │
+└─────────────────────────────────────────────────────┘
+
+串联：
+  Lesson 03 (JVM GC)  ──► WeakReference 回收机制
+  Lesson 06 (线程池)  ──► 线程复用、核心线程不销毁</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="quiz-section">
+  <h2>Quiz — 检索练习</h2>
+  <p style="color:var(--muted);font-size:0.9em;margin-bottom:1.5em;">闭上眼睛回忆，再点选答案。每题选项字数相同。</p>
+
+  <!-- Q1 -->
+  <div class="question" id="q1">
+    <div class="q-text">Q1. ThreadLocalMap 中 Entry 的 key 使用什么引用类型？</div>
+    <div class="options">
+      <button class="option" onclick="answer('q1','a','wrong')">强引用（StrongReference）</button>
+      <button class="option" onclick="answer('q1','b','correct')">弱引用（WeakReference）</button>
+      <button class="option" onclick="answer('q1','c','wrong')">软引用（SoftReference）</button>
+      <button class="option" onclick="answer('q1','d','wrong')">虚引用（PhantomReference）</button>
+    </div>
+    <div class="feedback" id="q1-feedback"></div>
+  </div>
+
+  <!-- Q2 -->
+  <div class="question" id="q2">
+    <div class="q-text">Q2. 线程池场景下，ThreadLocal 不调用 remove() 会导致什么问题？（选最完整的）</div>
+    <div class="options">
+      <button class="option" onclick="answer('q2','a','wrong')">只会导致脏数据，不会内存泄漏</button>
+      <button class="option" onclick="answer('q2','b','wrong')">只会内存泄漏，不会脏数据</button>
+      <button class="option" onclick="answer('q2','c','correct')">既可能脏数据也可能内存泄漏</button>
+      <button class="option" onclick="answer('q2','d','wrong')">抛出 IllegalStateException 异常</button>
+    </div>
+    <div class="feedback" id="q2-feedback"></div>
+  </div>
+
+  <!-- Q3 -->
+  <div class="question" id="q3">
+    <div class="q-text">Q3. 下列哪种方式能在线程池里正确透传父线程的 ThreadLocal 值？</div>
+    <div class="options">
+      <button class="option" onclick="answer('q3','a','wrong')">直接使用 ThreadLocal.get()</button>
+      <button class="option" onclick="answer('q3','b','wrong')">改用 InheritableThreadLocal</button>
+      <button class="option" onclick="answer('q3','c','correct')">使用 TransmittableThreadLocal</button>
+      <button class="option" onclick="answer('q3','d','wrong')">在任务里手动 set() 再 remove()</button>
+    </div>
+    <div class="feedback" id="q3-feedback"></div>
+  </div>
+
+  <!-- Q4 -->
+  <div class="question" id="q4">
+    <div class="q-text">Q4. 为什么 Entry 的 key 不设计成强引用？</div>
+    <div class="options">
+      <button class="option" onclick="answer('q4','a','wrong')">强引用无法存入 ThreadLocalMap</button>
+      <button class="option" onclick="answer('q4','b','wrong')">弱引用读取比强引用更快</button>
+      <button class="option" onclick="answer('q4','c','correct')">强引用会让 ThreadLocal 对象永远无法 GC</button>
+      <button class="option" onclick="answer('q4','d','wrong')">JDK 规范要求 Map 的 key 必须是弱引用</button>
+    </div>
+    <div class="feedback" id="q4-feedback"></div>
+  </div>
+
+  <!-- Q5 -->
+  <div class="question" id="q5">
+    <div class="q-text">Q5. 修复 ThreadLocal 内存泄漏的最可靠位置是哪里？</div>
+    <div class="options">
+      <button class="option" onclick="answer('q5','a','wrong')">在 catch 块中调用 remove()</button>
+      <button class="option" onclick="answer('q5','b','wrong')">在 try 块末尾调用 remove()</button>
+      <button class="option" onclick="answer('q5','c','correct')">在 finally 块中调用 remove()</button>
+      <button class="option" onclick="answer('q5','d','wrong')">依赖 JDK 自动清理 stale entry</button>
+    </div>
+    <div class="feedback" id="q5-feedback"></div>
+  </div>
+
+  <!-- Q6 -->
+  <div class="question" id="q6">
+    <div class="q-text">Q6. InheritableThreadLocal 在线程池中失效的根本原因是？</div>
+    <div class="options">
+      <button class="option" onclick="answer('q6','a','wrong')">InheritableThreadLocal 不支持线程池</button>
+      <button class="option" onclick="answer('q6','b','correct')">继承发生在线程创建时，非任务提交时</button>
+      <button class="option" onclick="answer('q6','c','wrong')">线程池线程没有父线程</button>
+      <button class="option" onclick="answer('q6','d','wrong')">线程池会清理所有 ThreadLocal</button>
+    </div>
+    <div class="feedback" id="q6-feedback"></div>
+  </div>
+
+  <div class="score-box" id="score-box">
+    <div class="score-num" id="score-num">0/6</div>
+    <p id="score-msg" style="margin-top:0.5em;"></p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2>本课行动项</h2>
+
+<ol>
+  <li><strong>Code Review</strong>：在你的 TP-LINK 项目里搜 <code>ThreadLocal</code>，检查每个 <code>set()</code> 是否配对了 <code>finally { remove(); }</code>。</li>
+  <li><strong>实验</strong>：用 Lesson 06 的线程池代码写一个脏数据复现 Demo（core=1 的线程池，提交两个任务，第一个 set 不 remove，第二个 get 并打印）。</li>
+  <li><strong>面试话术</strong>：对着镜子讲一遍"ThreadLocal 内存泄漏原因+修复"，控制在 90 秒内。</li>
+</ol>
+
+<h2>推荐阅读</h2>
+
+<ul>
+  <li><a href="https://www.zhihu.com/question/341005993" target="_blank">知乎：ThreadLocal 内存泄漏真正原因（高赞回答）</a></li>
+  <li><a href="https://github.com/alibaba/transmittable-thread-local" target="_blank">TransmittableThreadLocal GitHub</a> — 阿里 TTL 源码，README 有详细使用场景</li>
+  <li>JDK 源码：<code>java.lang.ThreadLocal</code> + <code>ThreadLocal.ThreadLocalMap</code>（直接 IDEA 跳进去看 set/get/remove 和 expungeStaleEntry）</li>
+</ul>
+
+<div class="ask-me">
+  <strong>问题？直接问 Agent。</strong><br>
+  ThreadLocalMap 的哈希冲突怎么处理？TTL 内部如何在任务提交时拍快照？Spring 的哪些组件在内部用了 ThreadLocal？ — 直接开问，Agent 是你的老师。
+</div>
+
+<footer>
+  <p>Lesson 07 · ThreadLocal 内部原理与线程池泄漏修复</p>
+  <p>← <a href="0006-java-thread-pool.html">Lesson 06: 线程池七大参数</a></p>
+</footer>
+
+<script>
+const answers = {
+  q1: { correct: 'b', explanation: '弱引用（WeakReference）。key 弱、value 强是核心非对称设计，也是泄漏根源。' },
+  q2: { correct: 'c', explanation: '两者都会发生：复用线程拿到上一次的 value → 脏数据；ThreadLocal 被 GC 后 value 无法回收 → 内存泄漏。' },
+  q3: { correct: 'c', explanation: 'TransmittableThreadLocal (TTL)，阿里开源。它在任务提交时拍下父线程的快照，任务执行时还原，解决线程池透传问题。' },
+  q4: { correct: 'c', explanation: '若 key 是强引用，即使外部代码不再持有 ThreadLocal，ThreadLocalMap 仍强引用它 → 永远不被 GC。弱引用是两害取其轻。' },
+  q5: { correct: 'c', explanation: 'finally 块无论正常还是异常都会执行。catch 块在没有异常时被跳过；try 末尾会被异常绕过；依赖 JDK 自动清理不可靠。' },
+  q6: { correct: 'b', explanation: '继承发生在 new Thread() 时（线程创建），不是在 submit() 时（任务提交）。线程池线程早已创建完毕，提交任务时不会重新继承父线程的值。' }
+};
+
+let answered = {};
+
+function answer(qId, choice, result) {
+  if (answered[qId]) return;
+  answered[qId] = true;
+
+  const buttons = document.querySelectorAll(`#${qId} .option`);
+  const correctChoice = answers[qId].correct;
+  const letters = ['a','b','c','d'];
+
+  buttons.forEach((btn, i) => {
+    btn.disabled = true;
+    if (letters[i] === correctChoice) btn.classList.add('correct');
+    else if (letters[i] === choice && choice !== correctChoice) btn.classList.add('wrong');
+  });
+
+  const fb = document.getElementById(`${qId}-feedback`);
+  fb.classList.add('show');
+  if (result === 'correct') {
+    fb.classList.add('ok');
+    fb.textContent = '✓ 正确！' + answers[qId].explanation;
+  } else {
+    fb.classList.add('no');
+    fb.textContent = '✗ 错误。' + answers[qId].explanation;
+  }
+
+  if (Object.keys(answered).length === 6) showScore();
+}
+
+function showScore() {
+  let correct = 0;
+  for (let qId in answered) {
+    const btn = document.querySelector(`#${qId} .option.correct`);
+    // check if user picked correct
+    const allBtns = document.querySelectorAll(`#${qId} .option`);
+    allBtns.forEach(b => {
+      if (b.classList.contains('correct') && !b.classList.contains('wrong')) {
+        // this means either they got it right, or it's just highlighted
+      }
+    });
+  }
+  // Recount by checking which ones have no .wrong selected
+  const qIds = ['q1','q2','q3','q4','q5','q6'];
+  qIds.forEach(qId => {
+    const wrongSelected = document.querySelector(`#${qId} .option.wrong`);
+    if (!wrongSelected) correct++;
+  });
+
+  const box = document.getElementById('score-box');
+  const num = document.getElementById('score-num');
+  const msg = document.getElementById('score-msg');
+  box.classList.add('show');
+  num.textContent = `${correct}/6`;
+  if (correct === 6) msg.textContent = '完美！ThreadLocal 内化完毕，可以上场了。';
+  else if (correct >= 4) msg.textContent = '良好。错题再推演一遍脑内流程。';
+  else msg.textContent = '再过一遍第 2-3 节，重点记 WeakReference 泄漏路径。';
+}
+</script>
+</body>
+</html>
