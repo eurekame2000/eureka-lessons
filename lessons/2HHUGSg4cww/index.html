@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 10 — Agent 可观测性：Span 为单位的推理追踪</title>
+<style>
+  :root {
+    --ink: #1a1a1a;
+    --muted: #555;
+    --accent: #1a6b3c;
+    --accent2: #2563eb;
+    --accent3: #7c3aed;
+    --bg: #fafaf8;
+    --card: #ffffff;
+    --border: #e0ddd8;
+    --code-bg: #f4f1eb;
+    --warn: #fff3cd;
+    --warn-border: #ffc107;
+    --success: #d4edda;
+    --success-border: #28a745;
+    --danger: #f8d7da;
+    --danger-border: #dc3545;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Georgia', 'Times New Roman', serif;
+    font-size: 17px;
+    line-height: 1.75;
+    color: var(--ink);
+    background: var(--bg);
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 48px 24px 80px;
+  }
+  h1 { font-size: 2rem; font-weight: 700; margin-bottom: 0.3em; }
+  h2 { font-size: 1.35rem; font-weight: 700; margin: 2.2em 0 0.7em; border-bottom: 2px solid var(--border); padding-bottom: 0.3em; }
+  h3 { font-size: 1.1rem; font-weight: 700; margin: 1.6em 0 0.5em; }
+  p, li { margin-bottom: 0.8em; }
+  ul, ol { margin: 0.5em 0 1em 1.5em; }
+  li { margin-bottom: 0.3em; }
+  a { color: var(--accent2); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .meta { color: var(--muted); font-family: monospace; font-size: 0.85rem; margin-bottom: 2em; }
+  .nav { font-family: monospace; font-size: 0.8rem; margin-bottom: 2.5em; color: var(--muted); }
+  .nav a { color: var(--accent2); }
+
+  code {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.88em;
+    background: var(--code-bg);
+    padding: 2px 5px;
+    border-radius: 3px;
+  }
+  pre {
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 16px 20px;
+    border-radius: 6px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.82rem;
+    line-height: 1.6;
+    overflow-x: auto;
+    margin: 1em 0;
+  }
+  pre code { background: transparent; padding: 0; color: inherit; }
+
+  blockquote {
+    border-left: 4px solid var(--accent2);
+    background: #f0f7ff;
+    padding: 12px 20px;
+    margin: 1.2em 0;
+    border-radius: 0 6px 6px 0;
+  }
+  blockquote p { margin-bottom: 0; }
+
+  .callout {
+    border-left: 4px solid var(--accent);
+    background: #e8f5e9;
+    padding: 12px 20px;
+    margin: 1.2em 0;
+    border-radius: 0 6px 6px 0;
+  }
+  .callout.warn {
+    border-left-color: var(--warn-border);
+    background: var(--warn);
+  }
+  .callout.danger {
+    border-left-color: var(--danger-border);
+    background: var(--danger);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+    margin: 1em 0;
+  }
+  th { background: #f1f5f9; padding: 8px 12px; text-align: left; border: 1px solid #e2e8f0; font-weight: 600; }
+  td { padding: 8px 12px; border: 1px solid #e2e8f0; vertical-align: top; }
+  tr:nth-child(even) td { background: #fafaf8; }
+
+  .tag {
+    display: inline-block;
+    font-family: monospace;
+    font-size: 0.75rem;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: var(--code-bg);
+    color: var(--muted);
+  }
+  .tag.span { background: #dbeafe; color: #1e40af; }
+  .tag.key { background: #f3e8ff; color: #6b21a8; }
+
+  .quiz { background: var(--card); border: 2px solid var(--border); border-radius: 8px; padding: 24px; margin: 2em 0; }
+  .quiz h3 { margin-top: 0; border: none; }
+  .quiz-option { display: block; width: 100%; text-align: left; padding: 10px 16px; margin: 6px 0; background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 0.95rem; }
+  .quiz-option:hover { background: #e8e5de; }
+  .quiz-option.correct { background: var(--success); border-color: var(--success-border); }
+  .quiz-option.wrong { background: var(--danger); border-color: var(--danger-border); }
+
+  .sidenote { font-size: 0.82rem; color: var(--muted); border-left: 2px solid var(--border); padding-left: 12px; margin: 0.8em 0 0.8em 20px; }
+
+  .ex-section { border: 2px solid var(--accent2); border-radius: 8px; padding: 20px; margin: 1.5em 0; background: #f8faff; }
+  .ex-section h3 { margin-top: 0; border: none; color: var(--accent2); }
+
+  .tree { font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; line-height: 1.8; }
+  .tree .level-0 { color: #1e40af; }
+  .tree .level-1 { color: #065f46; padding-left: 24px; }
+  .tree .level-2 { color: #7c3aed; padding-left: 48px; }
+  .tree .level-3 { color: #b45309; padding-left: 72px; }
+
+  @media print {
+    body { font-size: 12px; padding: 12px; max-width: 100%; }
+    pre { font-size: 9px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="nav">
+  <a href="../lesson-index.html">← 课程目录</a> ·
+  <a href="../reference/agent-observability-cheatsheet.html">速查表</a>
+</div>
+
+<h1>Agent 可观测性</h1>
+<p style="font-size: 1.1rem; color: var(--muted); margin-bottom: 0.5em;">Span 为单位的推理追踪 · OpenTelemetry GenAI 语义约定</p>
+<div class="meta">Lesson 10 · 2026-06-20 · ⏱ 25 min</div>
+
+<blockquote>
+<p><strong>面试情境</strong>：你正在面高级后端/AI Agent 岗位，面试官问：<em>"你的 Agent 在生产上是怎么保证可观测性的？如果 Agent 回答错了，你怎么知道？怎么定位？"</em></p>
+</blockquote>
+
+<h2>1. 传统盲区：为什么 "up" 不够</h2>
+
+<p>传统 APM 告诉你三件事：服务通不通、响应慢不慢、有没有 500。对 Agent 来说这些远远不够。</p>
+
+<p>Agent 的失败模式是 <strong>静默语义错误</strong>：</p>
+<ul>
+  <li>Agent 返回了一个格式正确的回复，但决策错了（选了错误的工具）</li>
+  <li>Agent 陷入推理循环，token 消耗暴增，但最后一个 span 依然是 "success"</li>
+  <li>子 Agent 返回了有毒的结果，父 Agent 没有检查直接用它做了下一步</li>
+</ul>
+
+<p>这些错误不会产生 HTTP 5xx。唯一的观测手段是 <strong>追踪 Agent 的每个推理步骤</strong>——即 <dfn>span-per-tick tracing</dfn>：每一轮推理（reasoning tick）生成一个独立的 span，嵌套在完整请求的 trace 之下。</p>
+
+<div class="callout">
+  <strong>核心洞察</strong> ：Agent 可观测性 = 追踪 <em>意图和执行路径</em>，而不仅仅是输入/输出。你需要回答的不只是 "Agent 回复了什么"，而是 "Agent 为什么选择了这个工具？它考虑了哪些选项？花了多少 token？" 
+</div>
+
+<h2>2. 四类 Span（核心知识）</h2>
+
+<p>OpenTelemetry GenAI SIG 定义的 <code>gen_ai.*</code> 语义约定将 Agent 追踪拆为四类 span，覆盖所有失败面：</p>
+
+<table>
+  <tr><th>Span 类型</th><th>OTel span name</th><th>捕获的失败</th></tr>
+  <tr>
+    <td><span class="tag span">invoke_agent</span></td>
+    <td><code>invoke_agent {agent.name}</code></td>
+    <td>Agent 调度失败、上下文超长、子 Agent 未返回</td>
+  </tr>
+  <tr>
+    <td><span class="tag span">chat</span></td>
+    <td><code>chat {gen_ai.request.model}</code></td>
+    <td>LLM 调用失败、token 突发、finish_reason 异常</td>
+  </tr>
+  <tr>
+    <td><span class="tag span">execute_tool</span></td>
+    <td><code>execute_tool {gen_ai.tool.name}</code></td>
+    <td>工具抛异常、超时、返回非法数据、重复调用</td>
+  </tr>
+  <tr>
+    <td><span class="tag span">memory / state</span></td>
+    <td><code>memory.{operation}</code></td>
+    <td>上下文丢失、summarization 漂移、状态污染</td>
+  </tr>
+</table>
+
+<p>这四个 span 类型构成一棵 <strong>层次化 span 树</strong>，一个 trace 对应一个用户请求的全部执行路径：</p>
+
+<pre class="tree">
+<span class="level-0">Trace 0x1a2b — 用户请求 "帮我查一下昨天的销售数据"</span>
+<span class="level-0">└── [invoke_agent] sales-agent</span>
+<span class="level-1">    ├── [chat] gpt-4o (system prompt + 用户问题)</span>
+<span class="level-1">    │   └── finish_reason: tool_calls</span>
+<span class="level-1">    ├── [execute_tool] query_clickhouse</span>
+<span class="level-1">    │   ├── gen_ai.tool.call.arguments: {"sql":"SELECT ..."}</span>
+<span class="level-1">    │   └── gen_ai.tool.call.result: {"rows": 42, ...}</span>
+<span class="level-1">    ├── [memory.write] context_update (工具结果注入)</span>
+<span class="level-1">    └── [chat] gpt-4o (工具结果 → 自然语言回复)</span>
+<span class="level-2">        └── finish_reason: stop</span>
+</pre>
+
+<p>每一个 span 都记录了：<strong>输入、输出、时间戳、错误状态、parent span ID</strong>。有了这棵树，你可以回答任何问题——"第几步花了最久？哪一步抛了异常？这个 tool call 的参数是什么？"</p>
+
+<h2>3. OTel GenAI 语义约定速览</h2>
+
+<p>OpenTelemetry GenAI SIG 从 2024 年 4 月开始制定标准化属性名。截至 2026 年 5 月（v1.41），核心约定如下：</p>
+
+<table>
+  <tr><th>属性</th><th>作用</th><th>用在</th></tr>
+  <tr><td><span class="tag key">gen_ai.request.model</span></td><td>模型名称（如 gpt-4o, gemini-2.0-flash）</td><td>chat span</td></tr>
+  <tr><td><span class="tag key">gen_ai.usage.input_tokens</span></td><td>输入 token 数</td><td>chat span</td></tr>
+  <tr><td><span class="tag key">gen_ai.usage.output_tokens</span></td><td>输出 token 数</td><td>chat span</td></tr>
+  <tr><td><span class="tag key">gen_ai.response.finish_reasons</span></td><td>stop / tool_calls / length / content_filter</td><td>chat span</td></tr>
+  <tr><td><span class="tag key">gen_ai.tool.name</span></td><td>工具名称</td><td>execute_tool span</td></tr>
+  <tr><td><span class="tag key">gen_ai.tool.call.arguments</span></td><td>工具调用参数（JSON）</td><td>execute_tool span</td></tr>
+  <tr><td><span class="tag key">gen_ai.tool.call.result</span></td><td>工具返回结果</td><td>execute_tool span</td></tr>
+  <tr><td><span class="tag key">gen_ai.agent.name</span></td><td>Agent 名称/ID</td><td>invoke_agent span</td></tr>
+</table>
+
+<div class="callout warn">
+  <strong>注意</strong> ：GenAI 语义约定目前仍是 <strong>Development</strong> 状态，属性名可能变化。使用 <code>OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental</code> 明确锁定版本。
+</div>
+
+<h3>内容采集模式</h3>
+
+<p>默认情况下，OTel GenAI 约定 <strong>不采集</strong> prompt/completion 内容——只采集元数据（模型名、token 数、时长）。内容采集有三种模式：</p>
+
+<ol>
+  <li><strong>元数据只</strong>（默认）——无敏感数据风险，但无法 debug 质量</li>
+  <li><strong>内容内联</strong>（opt-in）——将 messages 作为 span 属性写入，适合 dev 环境</li>
+  <li><strong>内容外置</strong>（推荐生产）——内容存外部存储，span 上只挂引用</li>
+</ol>
+
+<h2>4. 动手练习：用 Java OTel SDK 追踪一个 Tool Call</h2>
+
+<p>下面代码展示如何手工创建 <code>execute_tool</code> span 并附加 <code>gen_ai.*</code> 属性。实际场景中你会在工具的 wrapper 或 interceptor 中做这件事。</p>
+
+<pre><code>// 依赖：io.opentelemetry:opentelemetry-api:1.44.0
+import io.opentelemetry.api.GlobalOpenTelemetry;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.context.Scope;
+import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.api.common.AttributeKey;
+
+public class AgentTracer {
+
+    static final Tracer tracer = GlobalOpenTelemetry.getTracer("agent-tracer");
+
+    public static <T> T traceToolCall(
+        String toolName,      // 工具名
+        String arguments,     // JSON 参数
+        ThrowingSupplier&lt;T&gt; fn  // 真正的工具逻辑
+    ) throws Throwable {
+        // 创建 execute_tool 子 span
+        Span span = tracer.spanBuilder("execute_tool " + toolName)
+            .setSpanKind(SpanKind.INTERNAL)
+            .setAttribute("gen_ai.operation.name", "execute_tool")
+            .setAttribute("gen_ai.tool.name", toolName)
+            .setAttribute("gen_ai.tool.call.arguments", arguments)
+            .start();
+
+        try (Scope ignored = span.makeCurrent()) {
+            T result = fn.get();
+            String resultStr = result == null ? "" : result.toString();
+
+            // 截断大结果，避免 span 超尺寸
+            if (resultStr.length() > 10000) {
+                resultStr = resultStr.substring(0, 10000) + "... [truncated]";
+            }
+            span.setAttribute("gen_ai.tool.call.result", resultStr);
+            span.setStatus(StatusCode.OK);
+            return result;
+        } catch (Throwable t) {
+            span.recordException(t);
+            span.setStatus(StatusCode.ERROR, t.getMessage());
+            throw t;
+        } finally {
+            span.end();
+        }
+    }
+
+    @FunctionalInterface
+    public interface ThrowingSupplier&lt;T&gt; {
+        T get() throws Throwable;
+    }
+}
+</code></pre>
+
+<p>用法，以一个 ClickHouse 查询工具为例：</p>
+
+<pre><code>// 在 Agent 的 Tool Router 中
+String result = AgentTracer.traceToolCall(
+    "query_clickhouse",
+    "{\"sql\": \"SELECT count(*) FROM events WHERE date = '2026-06-19'\"}",
+    () -> clickHouseClient.query("SELECT count(*) FROM events WHERE date = '2026-06-19'")
+);
+</code></pre>
+
+<details>
+<summary style="cursor:pointer;color:var(--accent2);font-weight:600;">📋 完整 Span 树构造示例（点击展开）</summary>
+
+<pre><code>// 使用 Tracer 手动构建 span 树
+Span rootSpan = tracer.spanBuilder("invoke_agent sales-query")
+    .setSpanKind(SpanKind.INTERNAL)
+    .setAttribute("gen_ai.operation.name", "invoke_agent")
+    .setAttribute("gen_ai.agent.name", "sales-query")
+    .start();
+
+try (Scope scope = rootSpan.makeCurrent()) {
+
+    // Step 1: LLM 调用
+    Span llmSpan = tracer.spanBuilder("chat gpt-4o")
+        .setSpanKind(SpanKind.CLIENT)
+        .setAttribute("gen_ai.operation.name", "chat")
+        .setAttribute("gen_ai.request.model", "gpt-4o")
+        .setAttribute("gen_ai.usage.input_tokens", 450)
+        .setAttribute("gen_ai.usage.output_tokens", 120)
+        .setAttribute("gen_ai.response.finish_reasons", "tool_calls")
+        .start();
+    llmSpan.end();
+
+    // Step 2: 工具调用
+    Span toolSpan = tracer.spanBuilder("execute_tool query_clickhouse")
+        .setSpanKind(SpanKind.INTERNAL)
+        .setAttribute("gen_ai.operation.name", "execute_tool")
+        .setAttribute("gen_ai.tool.name", "query_clickhouse")
+        .setAttribute("gen_ai.tool.call.arguments",
+            "{\"sql\": \"SELECT sum(revenue) FROM sales WHERE date = '2026-06-19'\"}")
+        .start();
+
+    // 模拟调用
+    String result = clickHouseClient.query("SELECT sum(revenue) FROM sales ...");
+    toolSpan.setAttribute("gen_ai.tool.call.result", result);
+    toolSpan.setStatus(StatusCode.OK);
+    toolSpan.end();
+
+} catch (Exception e) {
+    rootSpan.recordException(e);
+    rootSpan.setStatus(StatusCode.ERROR, e.getMessage());
+    throw e;
+} finally {
+    rootSpan.end();
+}
+</code></pre>
+</details>
+
+<p><br></p>
+
+<div class="ex-section">
+  <h3>🧪 你的任务</h3>
+  <ol>
+    <li>阅读上面 <code>AgentTracer</code> 代码，理解每个 span 属性对应什么</li>
+    <li>思考：如果你的 Agent 调了 3 个工具，其中一个抛异常了，span 树长什么样？如果异常被 catch 了，span 状态应该怎么设？</li>
+    <li><strong>延伸思考</strong>：如何在这个 span 树中加入 <code>user_id</code> 和 <code>workflow_id</code>？为什么官网说"从第一天就加上业务标签"？</li>
+  </ol>
+  <details>
+  <summary style="cursor:pointer;color:var(--accent2);">📝 参考答案</summary>
+  <p><strong>2.</strong> 三个工具各一个 <code>execute_tool</code> 子 span，失败的设 <code>StatusCode.ERROR</code> 并 <code>recordException()</code>。即使异常被 catch，span 应该如实记录——"已发生错误，被业务逻辑 catch 了"是一种信息，不是掩饰的理由。</p>
+  <p><strong>3.</strong> 业务标签加到 <code>invoke_agent</code> 根 span 上（如 <code>user.id</code>、<code>workflow.id</code>），这样所有子 span 通过 trace ID 自然继承。不加的话，排问题时你只能在几千条 trace 里手动翻——"从第一天就加上" 是为了避免事后补打标签的痛苦。</p>
+  </details>
+</div>
+
+<h2>5. 面试应答结构</h2>
+
+<p>如果面试官问"你的 Agent 怎么监控"，按这个结构回答：</p>
+
+<ol>
+  <li><strong>分层</strong>："Agent 可观测性和传统不一样。传统 APM 看请求量/错误率/延迟就够了，Agent 的失败是静默语义错误，必须追踪推理路径。"</li>
+  <li><strong>Span 树</strong>："我们用 OTel GenAI 语义约定，每个用户请求是一条 trace，里面包含 invoke_agent、chat、execute_tool、memory 四种 span。每个 span 记录输入输出、token 消耗、耗时。"</li>
+  <li><strong>评估层</strong>："trace 之上还要跑 LLM-as-Judge 评估，对采样 trace 打分，判断回复质量是否达标。"</li>
+  <li><strong>成本</strong>："采样策略：100% 元数据 + 10-20% 内容 + 100% 错误 trace 全量。内容外置存储，PII 在 Collector 层脱敏。"</li>
+</ol>
+
+<h2>6. Quiz</h2>
+
+<div class="quiz">
+  <h3>Q1: Agent 失败为什么传统 APM 看不到？</h3>
+  <button class="quiz-option" onclick="this.classList.toggle('wrong')">A. 因为 Agent 没有日志</button>
+  <button class="quiz-option" onclick="this.classList.toggle('wrong')">B. 因为 Agent 不产生 HTTP 请求</button>
+  <button class="quiz-option" onclick="this.classList.toggle('correct')">C. 因为 Agent 的失败是语义错误，不是系统错误</button>
+  <button class="quiz-option" onclick="this.classList.toggle('wrong')">D. 因为 Agent 部署在 GPU 节点上</button>
+  <details>
+  <summary style="cursor:pointer;color:var(--accent2);margin-top:8px;">✅ 答案</summary>
+  <p><strong>C</strong> — Agent 失败通常不出 crash 或 500，而是输出质量下降、选错工具、陷入循环。这些不会被传统 apdex 或 error rate 捕获。</p>
+  </details>
+</div>
+
+<div class="quiz">
+  <h3>Q2: 以下哪个不是 OTel GenAI 定义的 Agent span 类型？</h3>
+  <button class="quiz-option" onclick="this.classList.toggle('wrong')">A. invoke_agent</button>
+  <button class="quiz-option" onclick="this.classList.toggle('wrong')">B. execute_tool</button>
+  <button class="quiz-option" onclick="this.classList.toggle('correct')">C. api_gateway</button>
+  <button class="quiz-option" onclick="this.classList.toggle('wrong')">D. chat</button>
+  <details>
+  <summary style="cursor:pointer;color:var(--accent2);margin-top:8px;">✅ 答案</summary>
+  <p><strong>C</strong> — 四个核心类型是 invoke_agent、chat、execute_tool、memory/state。</p>
+  </details>
+</div>
+
+<div class="quiz">
+  <h3>Q3: 生产中推荐的内容采集策略？</h3>
+  <button class="quiz-option" onclick="this.classList.toggle('correct')">A. 100% 元数据 + 10-20% 内容采样 + 100% 错误 trace 全量</button>
+  <button class="quiz-option" onclick="this.classList.toggle('wrong')">B. 100% 全量采集所有内容</button>
+  <button class="quiz-option" onclick="this.classList.toggle('wrong')">C. 不采集任何内容，只留元数据</button>
+  <button class="quiz-option" onclick="this.classList.toggle('wrong')">D. 只采集错误 trace 的元数据</button>
+  <details>
+  <summary style="cursor:pointer;color:var(--accent2);margin-top:8px;">✅ 答案</summary>
+  <p><strong>A</strong> — 元数据（结构 span）100% 保证成本和延迟统计完整；内容采样 10-20% 够做 LLM eval；错误 trace 全量确保可 debug。PII 匹配的 trace 内容 0% 采集。</p>
+  </details>
+</div>
+
+<h2>7. 延伸资源</h2>
+
+<ul>
+  <li><strong>推荐阅读</strong>：<a href="https://opentelemetry.io/blog/2026/genai-observability/" target="_blank">Inside the LLM Call: GenAI Observability with OpenTelemetry</a>（官方博客，2026-05）——最权威的 OTel GenAI 实践指南</li>
+  <li><strong>参考文档</strong>：<a href="https://opentelemetry.io/docs/specs/semconv/gen-ai/" target="_blank">OTel GenAI Semantic Conventions</a>（属性参考）</li>
+  <li><strong>配套速查表</strong>：<a href="../reference/agent-observability-cheatsheet.html">Agent 可观测性速查表</a></li>
+  <li><strong>关联课程</strong>：<a href="0001-agent-tool-use-fundamentals.html">Lesson 01 — Tool Use 基础</a>、<a href="0002-mcp-protocol-go.html">Lesson 02 — MCP 协议</a>、<a href="0004-agent-memory-rag.html">Lesson 04 — Agent Memory/RAG</a></li>
+</ul>
+
+<blockquote>
+  <p><strong>有问题？</strong> 课程中的任何概念不清、代码不理解、面试应答想深挖——直接问我。</p>
+</blockquote>
+
+</body>
+</html>
