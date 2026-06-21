@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 16 — ConcurrentHashMap 源码深度：JDK7 分段锁 → JDK8 CAS + synchronized + 红黑树</title>
+<style>
+  :root {
+    --ink: #1a1a1a;
+    --muted: #555;
+    --accent: #1a6b3c;
+    --accent2: #2563eb;
+    --accent3: #7c3aed;
+    --bg: #fafaf8;
+    --card: #ffffff;
+    --border: #e0ddd8;
+    --code-bg: #f4f1eb;
+    --warn: #fff3cd;
+    --warn-border: #ffc107;
+    --success: #d4edda;
+    --success-border: #28a745;
+    --danger: #f8d7da;
+    --danger-border: #dc3545;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Georgia', 'Times New Roman', serif;
+    font-size: 17px;
+    line-height: 1.75;
+    color: var(--ink);
+    background: var(--bg);
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 48px 24px 80px;
+  }
+  h1 { font-size: 2rem; font-weight: 700; margin-bottom: 0.3em; }
+  h2 { font-size: 1.35rem; font-weight: 700; margin: 2.2em 0 0.7em; border-bottom: 2px solid var(--border); padding-bottom: 0.3em; }
+  h3 { font-size: 1.1rem; font-weight: 700; margin: 1.6em 0 0.5em; }
+  p, li { margin-bottom: 0.8em; }
+  ul, ol { margin: 0.5em 0 1em 1.5em; }
+  li { margin-bottom: 0.3em; }
+  a { color: var(--accent2); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .meta { color: var(--muted); font-family: monospace; font-size: 0.85rem; margin-bottom: 2em; }
+  .nav { font-family: monospace; font-size: 0.8rem; margin-bottom: 2.5em; color: var(--muted); }
+  .nav a { color: var(--accent2); }
+
+  .sidebar { position: fixed; top: 48px; left: calc(50% - 620px); width: 200px; font-family: monospace; font-size: 0.78rem; line-height: 1.9; }
+  .sidebar a { color: var(--muted); display: block; }
+  .sidebar a:hover { color: var(--accent2); }
+  @media (max-width: 1100px) { .sidebar { display: none; } }
+
+  code {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.88em;
+    background: var(--code-bg);
+    padding: 2px 5px;
+    border-radius: 3px;
+  }
+  pre {
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 16px 20px;
+    border-radius: 6px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.82rem;
+    line-height: 1.6;
+    overflow-x: auto;
+    margin: 1em 0;
+  }
+  pre code { background: transparent; padding: 0; color: inherit; }
+  .cmt { color: #7e8aa0; }
+  .kw { color: #7dd3fc; }
+  .str { color: #86efac; }
+
+  blockquote {
+    border-left: 4px solid var(--accent2);
+    background: #f0f7ff;
+    padding: 12px 20px;
+    margin: 1.2em 0;
+    border-radius: 0 6px 6px 0;
+  }
+
+  .callout {
+    border-left: 4px solid var(--accent);
+    background: #e8f5e9;
+    padding: 12px 20px;
+    margin: 1.2em 0;
+    border-radius: 0 6px 6px 0;
+  }
+  .callout.warn { border-left-color: var(--warn-border); background: var(--warn); }
+  .callout.danger { border-left-color: var(--danger-border); background: var(--danger); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin: 1em 0; }
+  th { background: #f1f5f9; padding: 8px 12px; text-align: left; border: 1px solid #e2e8f0; font-weight: 600; }
+  td { padding: 8px 12px; border: 1px solid #e2e8f0; vertical-align: top; }
+  tr:nth-child(even) td { background: #fafaf8; }
+
+  .flow { font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; line-height: 2; background: var(--code-bg); padding: 12px 18px; border-radius: 6px; }
+  .flow .arrow { color: var(--muted); }
+
+  .quiz { background: var(--card); border: 2px solid var(--border); border-radius: 8px; padding: 20px 24px; margin: 1.4em 0; }
+  .quiz h3 { margin-top: 0; border: none; }
+  .quiz .opt { display: block; cursor: pointer; padding: 6px 10px; margin: 4px 0; border: 1px solid var(--border); border-radius: 5px; transition: background 0.15s; }
+  .quiz .opt:hover { background: #f1f5f9; }
+  .quiz .opt.correct { background: var(--success); border-color: var(--success-border); }
+  .quiz .opt.wrong { background: var(--danger); border-color: var(--danger-border); }
+  .quiz .fb { margin-top: 8px; font-size: 0.88rem; display: none; }
+  .quiz .fb.show { display: block; }
+  #scorebar { position: sticky; top: 0; background: var(--card); border: 2px solid var(--accent); border-radius: 8px; padding: 10px 16px; font-family: monospace; z-index: 10; margin: 1em 0; }
+  #banner { display: none; background: var(--success); border: 2px solid var(--success-border); border-radius: 8px; padding: 16px; text-align: center; font-weight: 700; margin: 1em 0; }
+
+  .check { background: #fffdf5; border: 1px dashed var(--warn-border); border-radius: 6px; padding: 12px 18px; margin: 1.2em 0; }
+
+  @media print { body { font-size: 12px; padding: 12px; max-width: 100%; } pre { font-size: 9px; } .sidebar { display: none; } }
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <strong>本课导航</strong>
+  <a href="#connect">▸ 开篇连接</a>
+  <a href="#pre">▸ 前置检查</a>
+  <a href="#s1">1. JDK7 分段锁</a>
+  <a href="#s2">2. JDK8 重构</a>
+  <a href="#s3">3. putVal 源码流程</a>
+  <a href="#s4">4. get 无锁读</a>
+  <a href="#s5">5. size 与 CounterCell</a>
+  <a href="#s6">6. 扩容协作 transfer</a>
+  <a href="#s7">7. 横向对比 & 陷阱</a>
+  <a href="#interview">▸ 面试话术</a>
+  <a href="#quiz">▸ 章末 Quiz</a>
+  <a href="#action">▸ 课后行动</a>
+  <a href="#source">▸ Primary Source</a>
+</div>
+
+<div class="nav">
+  <a href="../lesson-index.html">← 课程目录</a> ·
+  <a href="0006-java-thread-pool.html">L06 线程池</a> ·
+  <a href="0014-java-locks-aqs.html">L14 锁/AQS</a> ·
+  <a href="0015-go-sync-package.html">L15 Go sync</a>
+</div>
+
+<h1>ConcurrentHashMap 源码深度</h1>
+<p style="font-size: 1.1rem; color: var(--muted); margin-bottom: 0.5em;">JDK7 分段锁 → JDK8 CAS + synchronized + Node 链表/红黑树</p>
+<div class="meta">Lesson 16 · 2026-06-21 · ⏱ 40 min · 进阶</div>
+
+<h2 id="connect">开篇连接</h2>
+<blockquote>
+<p>「ConcurrentHashMap 怎么保证线程安全？JDK7 和 JDK8 有什么区别？」是 Java 并发面试的开场必杀题，而它正是 <strong>L14（CAS / synchronized 锁升级 / volatile / Unsafe）</strong> 这些底层原语的「实战出口」——把零散的同步工具拼装成一个真实数据结构。学完这一课，你能在 <code>clickhouse-mcp-server</code> 里用它做 query 结果的并发安全本地缓存，并把它和 <strong>L15 的 Go sync.Map</strong> 放到同一张并发 map 设计权衡表里讲。</p>
+</blockquote>
+
+<h2 id="pre">前置检查</h2>
+
+<div class="check">
+  <p><strong>前置 1</strong>（来自 L14）：CAS 的三个参数是什么？为什么 CAS 操作的目标变量通常要配 volatile？</p>
+  <details><summary style="cursor:pointer;color:var(--accent2);">查看答案</summary>
+  <p>三参数：<strong>内存位置 V、预期旧值 A、新值 B</strong>——当且仅当 V 当前值 == A 才把它原子地改成 B。CAS 只保证「比较并交换」这一步原子，<strong>可见性靠 volatile</strong>：保证一个线程改了值其他线程立即看到，否则会基于脏值做 CAS。这正是 ConcurrentHashMap 里 <code>table</code> 必须 volatile、写桶用 Unsafe 的原因。</p>
+  </details>
+</div>
+
+<div class="check">
+  <p><strong>前置 2</strong>（来自 L14）：synchronized 锁升级四个阶段是什么？为什么 JDK8 敢用 synchronized 锁单个桶头而不怕慢？</p>
+  <details><summary style="cursor:pointer;color:var(--accent2);">查看答案</summary>
+  <p>无锁 → 偏向锁 → 轻量级锁（CAS 自旋）→ 重量级锁（OS 互斥量挂起）。低竞争时停在偏向/轻量级，几乎不进内核，开销很小。锁住的又只是<strong>一个桶头节点</strong>，竞争被哈希打散，所以 synchronized 在这里反而比为每个 Segment 持有一个 ReentrantLock 更轻。</p>
+  </details>
+</div>
+
+<div class="check">
+  <p><strong>前置 3</strong>：HashMap 链表转红黑树的两个条件是什么？HashMap 在多线程下分别有什么问题（JDK7 / JDK8）？</p>
+  <details><summary style="cursor:pointer;color:var(--accent2);">查看答案</summary>
+  <p>转树双条件：<strong>链表长度 ≥ 8 且 table 容量 ≥ 64</strong>（容量不足时先扩容而非转树）。多线程问题：JDK7 头插法在并发扩容时形成环形链表 → <code>get</code> 死循环 100% CPU；JDK8 改尾插消除了死循环，但并发 put 仍会<strong>丢数据 / 覆盖</strong>，且仍非线程安全。</p>
+  </details>
+</div>
+
+<h2 id="s1">1. JDK7：分段锁（Segment + ReentrantLock）</h2>
+
+<p>JDK7 的核心思路是<strong>「把一把大锁拆成 N 把小锁」</strong>。整个 map 是一个 <code>Segment[]</code> 数组，每个 <code>Segment</code> 本身<strong>继承自 ReentrantLock</strong>，内部维护一个小型的 <code>HashEntry[]</code>（相当于一个迷你 HashMap）。</p>
+
+<div class="flow">
+ConcurrentHashMap<br>
+&nbsp;&nbsp;└─ Segment[]&nbsp;&nbsp;<span class="arrow">// 默认 16 个，初始化后<b>不可变</b> → 并发度固定 16</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ Segment extends ReentrantLock<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ HashEntry[]&nbsp;&nbsp;<span class="arrow">// 数组 + 链表</span>
+</div>
+
+<p>定位元素需要<strong>两次哈希</strong>：高位 hash 选 Segment，低位 hash 选 HashEntry 桶。put 时只锁住命中的那一个 Segment，其他 Segment 可并发写。</p>
+
+<pre><code><span class="cmt">// JDK7 put 简化：先定位 Segment，再在段内加锁</span>
+<span class="kw">final</span> V put(K key, <span class="kw">int</span> hash, V value, <span class="kw">boolean</span> onlyIfAbsent) {
+    HashEntry&lt;K,V&gt; node = tryLock() ? null    <span class="cmt">// 1. 先 tryLock 抢这个 Segment 的锁</span>
+        : scanAndLockForPut(key, hash, value); <span class="cmt">//    抢不到则自旋等待，顺便预热遍历</span>
+    V oldValue;
+    <span class="kw">try</span> {
+        HashEntry&lt;K,V&gt;[] tab = table;
+        <span class="kw">int</span> index = (tab.length - 1) &amp; hash;  <span class="cmt">// 2. 段内第二次哈希定位桶</span>
+        <span class="cmt">// ... 遍历链表，命中则覆盖，否则头插新节点 ...</span>
+    } <span class="kw">finally</span> {
+        unlock();                              <span class="cmt">// 3. 释放该 Segment 的 ReentrantLock</span>
+    }
+    <span class="kw">return</span> oldValue;
+}</code></pre>
+
+<div class="callout warn">
+<p><strong>JDK7 的硬伤</strong>：① 并发度被 Segment 数量<strong>写死</strong>（默认 16），再多线程也只能 16 路并行；② 每个 Segment 常驻一个 ReentrantLock 对象，<strong>内存开销固定</strong>；③ 两次哈希定位，寻址链路长；④ <code>size()</code> 要尝试锁所有段。</p>
+</div>
+
+<div class="check">
+  <p><strong>即时检验</strong>：JDK7 中如果你 new 时不指定 concurrencyLevel，两个线程操作落在<strong>同一个 Segment</strong> 的不同桶上，它们能并发写吗？</p>
+  <details><summary style="cursor:pointer;color:var(--accent2);">查看答案</summary>
+  <p><strong>不能</strong>。锁的粒度是「整个 Segment」，不是单个桶。只要落在同一个 Segment，即使桶不同也会互相阻塞。这正是 JDK8 要把锁粒度细化到单桶的动机。</p>
+  </details>
+</div>
+
+<h2 id="s2">2. JDK8 重构：抛弃 Segment，CAS + synchronized 锁单桶</h2>
+
+<p>JDK8 彻底<strong>废弃了 Segment 分段锁</strong>，结构回归到和 HashMap 几乎一致的 <code>Node[] table</code>（数组 + 链表 + 红黑树），但把同步策略换成了<strong>「CAS 写空桶 + synchronized 锁桶头」</strong>。锁粒度从「一段」细化到「一个桶」，并发度 = 桶的数量（随扩容增长），不再被固定。</p>
+
+<pre><code><span class="cmt">// JDK8 关键字段</span>
+<span class="kw">transient volatile</span> Node&lt;K,V&gt;[] table;        <span class="cmt">// 主表，volatile 保证<b>引用</b>可见</span>
+<span class="kw">private transient volatile</span> Node&lt;K,V&gt;[] nextTable; <span class="cmt">// 扩容时的新表</span>
+<span class="kw">private transient volatile long</span> baseCount;     <span class="cmt">// 基础计数（低竞争）</span>
+<span class="kw">private transient volatile int</span> sizeCtl;         <span class="cmt">// 控制位：负数=初始化/扩容中</span>
+
+<span class="kw">static class</span> Node&lt;K,V&gt; {
+    <span class="kw">final int</span> hash;
+    <span class="kw">final</span> K key;
+    <span class="kw">volatile</span> V val;            <span class="cmt">// val 和 next 都是 volatile → get 无锁可见</span>
+    <span class="kw">volatile</span> Node&lt;K,V&gt; next;
+}</code></pre>
+
+<div class="callout danger">
+<p><strong>volatile 陷阱（高频考点）</strong>：<code>table</code> 字段是 volatile，但这<strong>只保证数组引用本身可见，不保证数组元素 <code>table[i]</code> 可见</strong>！Java 没有「volatile 数组元素」语法。所以读写桶必须用 Unsafe 的内存屏障版本：</p>
+</div>
+
+<pre><code><span class="cmt">// 三个核心 Unsafe 操作 —— 不能直接写 table[i]</span>
+<span class="kw">static final</span> &lt;K,V&gt; Node&lt;K,V&gt; tabAt(Node&lt;K,V&gt;[] tab, <span class="kw">int</span> i) {
+    <span class="kw">return</span> (Node&lt;K,V&gt;) U.getReferenceAcquire(tab, ...); <span class="cmt">// volatile 语义读元素</span>
+}
+<span class="kw">static final</span> &lt;K,V&gt; <span class="kw">boolean</span> casTabAt(Node&lt;K,V&gt;[] tab, <span class="kw">int</span> i,
+                                       Node&lt;K,V&gt; c, Node&lt;K,V&gt; v) {
+    <span class="kw">return</span> U.compareAndSetReference(tab, ..., c, v);  <span class="cmt">// CAS 写空桶</span>
+}
+<span class="kw">static final</span> &lt;K,V&gt; <span class="kw">void</span> setTabAt(Node&lt;K,V&gt;[] tab, <span class="kw">int</span> i, Node&lt;K,V&gt; v) {
+    U.putReferenceRelease(tab, ..., v);              <span class="cmt">// volatile 语义写元素</span>
+}</code></pre>
+
+<div class="check">
+  <p><strong>即时检验</strong>：既然 <code>table</code> 已经是 volatile，为什么读一个桶还要用 <code>tabAt()</code> 而不是直接 <code>table[i]</code>？</p>
+  <details><summary style="cursor:pointer;color:var(--accent2);">查看答案</summary>
+  <p>因为 <strong>volatile 修饰的是「数组引用变量」，不是数组里每个元素的槽位</strong>。直接 <code>table[i]</code> 是普通读，可能读到其他线程刚 CAS 写入但尚未对本线程可见的旧值。<code>tabAt()</code> 通过 Unsafe 的 acquire 语义读，确保拿到最新元素。</p>
+  </details>
+</div>
+
+<h2 id="s3">3. putVal 完整流程（源码注释级别）</h2>
+
+<p>这是面试最爱让你「手撕流程」的地方。JDK8 的 <code>putVal</code> 是一个 <code>for(;;)</code> 自旋，根据当前桶的状态分四条路径：</p>
+
+<pre><code><span class="kw">final</span> V putVal(K key, V value, <span class="kw">boolean</span> onlyIfAbsent) {
+    <span class="kw">if</span> (key == <span class="kw">null</span> || value == <span class="kw">null</span>) <span class="kw">throw new</span> NullPointerException(); <span class="cmt">// ① 不允许 null</span>
+    <span class="kw">int</span> hash = spread(key.hashCode());     <span class="cmt">// 扰动：高 16 位异或低 16 位，且抹掉符号位</span>
+    <span class="kw">int</span> binCount = 0;
+    <span class="kw">for</span> (Node&lt;K,V&gt;[] tab = table;;) {       <span class="cmt">// 自旋直到成功</span>
+        Node&lt;K,V&gt; f; <span class="kw">int</span> n, i, fh;
+        <span class="kw">if</span> (tab == <span class="kw">null</span> || (n = tab.length) == 0)
+            tab = initTable();             <span class="cmt">// ② 表未初始化 → 用 CAS+sizeCtl 抢初始化权</span>
+        <span class="kw">else if</span> ((f = tabAt(tab, i = (n - 1) &amp; hash)) == <span class="kw">null</span>) {
+            <span class="kw">if</span> (casTabAt(tab, i, <span class="kw">null</span>,        <span class="cmt">// ③ 空桶 → CAS 无锁写头节点</span>
+                        <span class="kw">new</span> Node&lt;K,V&gt;(hash, key, value)))
+                <span class="kw">break</span>;                      <span class="cmt">//    CAS 成功直接退出；失败则自旋重试</span>
+        }
+        <span class="kw">else if</span> ((fh = f.hash) == MOVED)    <span class="cmt">// ④ 桶头是 ForwardingNode(hash=-1)</span>
+            tab = helpTransfer(tab, f);    <span class="cmt">//    说明正在扩容 → 来帮忙搬迁</span>
+        <span class="kw">else</span> {
+            V oldVal = <span class="kw">null</span>;
+            <span class="kw">synchronized</span> (f) {              <span class="cmt">// ⑤ 非空桶 → 只锁这个桶头节点 f</span>
+                <span class="kw">if</span> (tabAt(tab, i) == f) {   <span class="cmt">//    double-check 头没被换走</span>
+                    <span class="kw">if</span> (fh &gt;= 0) {           <span class="cmt">//    fh>=0 是链表</span>
+                        binCount = 1;
+                        <span class="kw">for</span> (Node&lt;K,V&gt; e = f;; ++binCount) {
+                            <span class="cmt">// 命中 key → 覆盖 val；到尾部 → 尾插新节点</span>
+                        }
+                    } <span class="kw">else if</span> (f <span class="kw">instanceof</span> TreeBin) {
+                        <span class="cmt">// 红黑树 → 走 putTreeVal</span>
+                    }
+                }
+            }
+            <span class="kw">if</span> (binCount != 0) {
+                <span class="kw">if</span> (binCount &gt;= TREEIFY_THRESHOLD)  <span class="cmt">// ⑥ 链表 ≥8 → treeifyBin</span>
+                    treeifyBin(tab, i);            <span class="cmt">//    但容量 &lt;64 时它会改为扩容</span>
+                <span class="kw">break</span>;
+            }
+        }
+    }
+    addCount(1L, binCount);   <span class="cmt">// ⑦ 计数 +1，并按需触发扩容</span>
+    <span class="kw">return null</span>;
+}</code></pre>
+
+<p>注意 <code>treeifyBin</code> 内部的双条件守卫：</p>
+<pre><code><span class="kw">private final void</span> treeifyBin(Node&lt;K,V&gt;[] tab, <span class="kw">int</span> index) {
+    <span class="kw">if</span> (tab.length &lt; MIN_TREEIFY_CAPACITY)  <span class="cmt">// MIN_TREEIFY_CAPACITY = 64</span>
+        tryPresize(tab.length &lt;&lt; 1);        <span class="cmt">// 容量不足 → <b>先扩容</b>，不转树</span>
+    <span class="kw">else if</span> (...) { <span class="cmt">/* synchronized 锁桶头，链表转 TreeBin */</span> }
+}</code></pre>
+
+<div class="callout">
+<p><strong>一句话记忆 putVal</strong>：<em>空桶 CAS、撞桶 synchronized、遇 ForwardingNode 帮搬家、链长八且容六四才转树、最后 addCount。</em></p>
+</div>
+
+<div class="check">
+  <p><strong>即时检验</strong>：三种情形分别走哪条路径？(a) 目标桶为空；(b) 目标桶已有链表且未在扩容；(c) 目标桶头节点 hash == -1。</p>
+  <details><summary style="cursor:pointer;color:var(--accent2);">查看答案</summary>
+  <p>(a) <strong>casTabAt</strong> 无锁 CAS 写头节点；(b) <strong>synchronized(f)</strong> 锁住桶头遍历链表覆盖/尾插；(c) hash=-1 即 MOVED，是 ForwardingNode，走 <strong>helpTransfer</strong> 协助扩容后再重试。</p>
+  </details>
+</div>
+
+<h2 id="s4">4. get 为什么不需要加锁</h2>
+
+<p><code>get</code> 全程<strong>无锁</strong>，靠的是 <code>Node.val</code> 和 <code>Node.next</code> 都是 <strong>volatile</strong>，加上 <code>tabAt</code> 的 volatile 读语义。读到的要么是旧值要么是新值，但绝不会读到「写了一半」的中间态。</p>
+
+<pre><code><span class="kw">public</span> V get(Object key) {
+    Node&lt;K,V&gt;[] tab; Node&lt;K,V&gt; e, p; <span class="kw">int</span> n, eh; K ek;
+    <span class="kw">int</span> h = spread(key.hashCode());
+    <span class="kw">if</span> ((tab = table) != <span class="kw">null</span> &amp;&amp; (n = tab.length) &gt; 0 &amp;&amp;
+        (e = tabAt(tab, (n - 1) &amp; h)) != <span class="kw">null</span>) {   <span class="cmt">// volatile 读桶头</span>
+        <span class="kw">if</span> ((eh = e.hash) == h) { <span class="cmt">/* 头节点命中 */</span> }
+        <span class="kw">else if</span> (eh &lt; 0)              <span class="cmt">// hash&lt;0：ForwardingNode 或 TreeBin → 走 e.find()</span>
+            <span class="kw">return</span> (p = e.find(h, key)) != <span class="kw">null</span> ? p.val : <span class="kw">null</span>;
+        <span class="kw">while</span> ((e = e.next) != <span class="kw">null</span>) { <span class="cmt">// 遍历链表，next 是 volatile</span>
+            <span class="kw">if</span> (e.hash == h &amp;&amp; keyEquals(...)) <span class="kw">return</span> e.val;
+        }
+    }
+    <span class="kw">return null</span>;
+}</code></pre>
+
+<div class="callout">
+<p>正在扩容时 get 也安全：如果桶头是 ForwardingNode（hash&lt;0），<code>e.find()</code> 会被转发到 <code>nextTable</code> 上去查，读操作永远能找到正确的数据。这也解释了为什么 ConcurrentHashMap 的迭代器是<strong>弱一致性</strong>的——它反映的是创建后某一时刻的状态，不抛 <code>ConcurrentModificationException</code>。</p>
+</div>
+
+<h2 id="s5">5. size() 与 CounterCell：分散热点的计数</h2>
+
+<p>如果用一个 <code>volatile long count</code> 做全局计数，每次 put 都要 CAS 它 → 高并发下这个单点变成<strong>热点，CAS 频繁失败自旋</strong>。JDK8 借用了 <strong>LongAdder 的同源思想</strong>：把计数<strong>拆散</strong>到多个 cell 上，最后求和。</p>
+
+<pre><code><span class="kw">private transient volatile long</span> baseCount;        <span class="cmt">// 无竞争时直接 CAS 这个</span>
+<span class="kw">private transient volatile</span> CounterCell[] counterCells; <span class="cmt">// 竞争时分散到数组</span>
+
+<span class="kw">private final void</span> addCount(<span class="kw">long</span> x, <span class="kw">int</span> check) {
+    CounterCell[] cs; <span class="kw">long</span> b, s;
+    <span class="kw">if</span> ((cs = counterCells) != <span class="kw">null</span> ||
+        !U.compareAndSetLong(<span class="kw">this</span>, BASECOUNT, b = baseCount, s = b + x)) {
+        <span class="cmt">// CAS baseCount 失败（有竞争）→ 落到某个 CounterCell 上 CAS</span>
+        <span class="cmt">// 通过线程的 probe 哈希选 cell，把冲突打散到不同缓存行</span>
+        fullAddCount(x, ...);
+    }
+    <span class="cmt">// ... 检查是否需要扩容 ...</span>
+}
+
+<span class="kw">public int</span> size() {
+    <span class="kw">long</span> n = sumCount();   <span class="cmt">// baseCount + 所有 counterCells[i].value 求和</span>
+    <span class="kw">return</span> n &lt; 0 ? 0 : (n &gt; Integer.MAX_VALUE ? Integer.MAX_VALUE : (<span class="kw">int</span>) n);
+}</code></pre>
+
+<div class="callout warn">
+<p><strong>size() 是估算值</strong>：<code>sumCount()</code> 求和时不加锁，求和过程中其他线程仍在 put/remove，所以返回的是<strong>「某一瞬间的近似值」</strong>，弱一致。这是「用一致性换吞吐」的典型设计——和 <code>LongAdder</code> 同源。</p>
+</div>
+
+<div class="check">
+  <p><strong>即时检验</strong>：为什么不用一个简单的 <code>AtomicLong</code> 做计数，而要搞 baseCount + CounterCell[]？</p>
+  <details><summary style="cursor:pointer;color:var(--accent2);">查看答案</summary>
+  <p>AtomicLong 是<strong>单点 CAS</strong>，高并发下所有线程争同一个变量，CAS 失败率高、自旋浪费 CPU、还有缓存行抖动。CounterCell[] 把计数<strong>分散到多个槽位</strong>（不同缓存行），各线程按 probe 哈希落到不同 cell，把热点打散，读时求和——这就是 LongAdder 的核心思想，用空间和读取时的一致性换写入吞吐。</p>
+  </details>
+</div>
+
+<h2 id="s6">6. 扩容协作：sizeCtl、ForwardingNode、helpTransfer</h2>
+
+<p>JDK8 扩容最精妙的地方是<strong>「多线程协作迁移」</strong>——扩容时其他线程的 put 不会干等，而是会<strong>主动来帮忙搬运</strong>。</p>
+
+<table>
+<tr><th><code>sizeCtl</code> 的值</th><th>含义</th></tr>
+<tr><td>正数</td><td>下次扩容的阈值（容量 × 0.75）</td></tr>
+<tr><td>-1</td><td>表正在<strong>初始化</strong></td></tr>
+<tr><td>负数（非 -1）</td><td>正在<strong>扩容</strong>，高 16 位是扩容戳，低 16 位是「参与扩容的线程数 + 1」</td></tr>
+</table>
+
+<p>迁移按桶<strong>分段</strong>进行：每个线程通过 CAS 领取一段桶区间（stride，默认最小 16）去搬。一个桶搬完后，<strong>在旧表的该位置放一个 <code>ForwardingNode</code>（hash = MOVED = -1）</strong> 作为占位标记。</p>
+
+<div class="flow">
+线程A 触发扩容 <span class="arrow">→</span> 建 nextTable，sizeCtl 变负<br>
+线程B put 时撞到 ForwardingNode <span class="arrow">→</span> helpTransfer(tab, f) 加入搬迁<br>
+某桶搬完 <span class="arrow">→</span> 旧表该位置 setTabAt 一个 ForwardingNode<br>
+读到 ForwardingNode 的 get <span class="arrow">→</span> 自动转发到 nextTable 查找<br>
+全部搬完 <span class="arrow">→</span> table = nextTable，sizeCtl 回到正阈值
+</div>
+
+<div class="callout">
+<p>这是 <strong>L14 的 CAS + volatile state</strong> 在数据结构层的极致应用：<code>sizeCtl</code> 就像 AQS 的 <code>state</code>，多线程靠 CAS 它来协调「谁初始化、谁扩容、扩容到什么程度」，没有一把全局大锁。</p>
+</div>
+
+<h2 id="s7">7. 横向对比 & 经典陷阱</h2>
+
+<h3>JDK7 vs JDK8 对照表</h3>
+<table>
+<tr><th>维度</th><th>JDK7</th><th>JDK8</th></tr>
+<tr><td>锁实现</td><td>Segment extends <strong>ReentrantLock</strong></td><td>CAS + <strong>synchronized</strong>(桶头)</td></tr>
+<tr><td>锁粒度</td><td>一个 Segment（一段桶）</td><td>一个桶头节点（单 bucket）</td></tr>
+<tr><td>数据结构</td><td>Segment[] + HashEntry[] 链表</td><td>Node[] + 链表 + 红黑树</td></tr>
+<tr><td>并发度</td><td>= Segment 数，<strong>初始化后固定</strong>（默认 16）</td><td>= 桶数，<strong>随扩容增长</strong></td></tr>
+<tr><td>定位</td><td>两次哈希（选段 + 选桶）</td><td>一次哈希</td></tr>
+<tr><td>size 统计</td><td>尝试不加锁求和，失败则锁所有段</td><td>baseCount + CounterCell[]（LongAdder 思想）</td></tr>
+</table>
+
+<h3>与 HashTable / synchronizedMap 的性能对比</h3>
+<table>
+<tr><th>实现</th><th>同步方式</th><th>问题</th></tr>
+<tr><td>HashMap</td><td>无</td><td>非线程安全（并发丢数据）</td></tr>
+<tr><td>Hashtable</td><td>方法级 synchronized（一把大锁）</td><td>整表串行，读也阻塞，吞吐差</td></tr>
+<tr><td>Collections.synchronizedMap</td><td>包装类对同一 mutex 加锁</td><td>同样一把大锁，复合操作仍要手动同步</td></tr>
+<tr><td><strong>ConcurrentHashMap</strong></td><td>锁分桶 + CAS + 无锁读</td><td>读不阻塞、写按桶并行，吞吐最高</td></tr>
+</table>
+
+<h3>跨课对照：Java 锁分桶 vs Go sync.Map（L15）</h3>
+<table>
+<tr><th></th><th>ConcurrentHashMap</th><th>Go sync.Map</th></tr>
+<tr><td>核心思路</td><td>锁<strong>分桶</strong>，写时锁单桶，读无锁</td><td>读写<strong>分离</strong>：read（只读，无锁）+ dirty（加锁）双 map</td></tr>
+<tr><td>最优场景</td><td>读写都频繁、key 分布均匀</td><td>读多写少、key 相对稳定（缓存类）</td></tr>
+<tr><td>代价</td><td>写仍需对桶加锁</td><td>写需 promote dirty，写多时反而更慢</td></tr>
+</table>
+
+<div class="callout danger">
+<p><strong>经典陷阱：复合操作不原子</strong>。下面这段在 ConcurrentHashMap 上<strong>仍然有竞态</strong>——单个 get/put 各自线程安全，但「先判断再写入」之间可能被插入：</p>
+</div>
+
+<pre><code><span class="cmt">// ❌ 错误：check-then-act 不是原子的</span>
+<span class="kw">if</span> (!map.containsKey(key)) {   <span class="cmt">// 线程 A、B 可能同时通过这里</span>
+    map.put(key, compute());   <span class="cmt">// 两个都 put，后者覆盖前者</span>
+}
+
+<span class="cmt">// ✅ 正确：用原子的 putIfAbsent / computeIfAbsent</span>
+map.putIfAbsent(key, value);
+map.computeIfAbsent(key, k -&gt; expensiveCompute(k)); <span class="cmt">// 还保证 compute 只跑一次</span></code></pre>
+
+<h2 id="interview">面试话术</h2>
+
+<blockquote>
+<p><strong>Q：「ConcurrentHashMap 怎么保证线程安全？JDK7 和 JDK8 区别？」</strong></p>
+<p>我会分三层讲。<strong>第一层结构</strong>：JDK7 是分段锁，外层 Segment 数组，每个 Segment 继承 ReentrantLock，锁粒度是一整段，并发度固定为 Segment 数（默认 16）；JDK8 抛弃了 Segment，回到 Node 数组加链表/红黑树，锁粒度细化到单个桶头。<strong>第二层写策略</strong>：JDK8 的 putVal 分三种情况——空桶用 casTabAt 无锁 CAS 写入，撞桶用 synchronized 只锁这一个头节点，遇到 hash 为 -1 的 ForwardingNode 说明正在扩容、就调 helpTransfer 来协助搬迁。<strong>第三层读</strong>：get 全程无锁，因为 Node 的 val 和 next 都是 volatile，配合 tabAt 的 volatile 读语义，永远读不到中间态。在我做的 clickhouse-mcp-server 里，我就用它做 query 结果的本地缓存，读远多于写，无锁读这点收益很直接。</p>
+</blockquote>
+
+<blockquote>
+<p><strong>Q：「为什么 JDK8 不继续用 ReentrantLock，而改用 synchronized？」</strong></p>
+<p>关键在 synchronized 在 JDK6 之后有了<strong>锁升级</strong>优化：偏向锁、轻量级锁、重量级锁逐级升级，低竞争时停在偏向或轻量级阶段、靠 CAS 自旋根本不进内核，开销很小。而锁住的又只是一个桶头节点，竞争已经被哈希打散了，绝大多数桶根本不会膨胀到重量级。相比之下 JDK7 给每个 Segment 常驻一个 ReentrantLock 对象，内存开销固定且偏重。所以在「锁粒度足够细 + 锁升级足够轻」的前提下，synchronized 反而更省内存、更轻量。这跟 L14 讲的锁升级是同一套底层逻辑。</p>
+</blockquote>
+
+<blockquote>
+<p><strong>Q：「size() 准确吗？怎么统计的？」</strong></p>
+<p>不绝对准确，是一个<strong>弱一致的估算值</strong>。它没有用单个 AtomicLong，因为高并发下单点 CAS 会成为热点、失败自旋、缓存行抖动。JDK8 借鉴 LongAdder 的思想，用 baseCount 加上一个 CounterCell 数组：无竞争时直接 CAS baseCount，一旦冲突就按线程的 probe 哈希散落到不同的 CounterCell 上，把热点打散到不同缓存行；size() 时把 baseCount 和所有 cell 求和。求和过程不加锁，所以拿到的是某一瞬间的近似值——这是典型的用一致性换吞吐。</p>
+</blockquote>
+
+<h2 id="quiz">章末 Quiz</h2>
+
+<div id="scorebar">得分：<span id="score">0</span> / 7</div>
+<div id="banner">🎉 全部答对！你已掌握 ConcurrentHashMap 的源码核心机制。</div>
+
+<div class="quiz" data-q="q1">
+  <h3>Q1. 关于 JDK7 与 JDK8 的差异，下列哪项正确？</h3>
+  <span class="opt" onclick="answer('q1','A',this)">A. JDK8 仍然用 Segment 分段锁，只是改成了红黑树</span>
+  <span class="opt" onclick="answer('q1','B',this)">B. JDK8 抛弃 Segment，锁粒度从「一段」细化到「单个桶头」，并发度随扩容增长而非固定</span>
+  <span class="opt" onclick="answer('q1','C',this)">C. JDK7 的并发度可以随线程数自动增长</span>
+  <span class="opt" onclick="answer('q1','D',this)">D. JDK8 用 ReentrantLock 锁单个桶</span>
+  <div class="fb"></div>
+</div>
+
+<div class="quiz" data-q="q2">
+  <h3>Q2. JDK8 putVal 时，目标桶头节点的 hash == -1（MOVED），应该走哪条路径？</h3>
+  <span class="opt" onclick="answer('q2','A',this)">A. casTabAt 无锁写入</span>
+  <span class="opt" onclick="answer('q2','B',this)">B. synchronized 锁住头节点遍历链表</span>
+  <span class="opt" onclick="answer('q2','C',this)">C. helpTransfer 协助扩容后重试</span>
+  <span class="opt" onclick="answer('q2','D',this)">D. 抛 ConcurrentModificationException</span>
+  <div class="fb"></div>
+</div>
+
+<div class="quiz" data-q="q3">
+  <h3>Q3. 为什么 size() 用 baseCount + CounterCell[] 而不用单个 AtomicLong？</h3>
+  <span class="opt" onclick="answer('q3','A',this)">A. AtomicLong 不支持 long 类型</span>
+  <span class="opt" onclick="answer('q3','B',this)">B. 单点 CAS 在高并发下成热点、失败自旋、缓存行抖动；分散到多 cell 可打散热点（LongAdder 思想）</span>
+  <span class="opt" onclick="answer('q3','C',this)">C. CounterCell 能让 size() 变得绝对精确</span>
+  <span class="opt" onclick="answer('q3','D',this)">D. 为了节省内存</span>
+  <div class="fb"></div>
+</div>
+
+<div class="quiz" data-q="q4">
+  <h3>Q4. <code>table</code> 已是 volatile，为什么读桶还要用 <code>tabAt()</code>？</h3>
+  <span class="opt" onclick="answer('q4','A',this)">A. tabAt 比 table[i] 快</span>
+  <span class="opt" onclick="answer('q4','B',this)">B. volatile 只保证数组<b>引用</b>可见，不保证<b>元素</b>可见；直接 table[i] 可能读到旧值</span>
+  <span class="opt" onclick="answer('q4','C',this)">C. table[i] 会抛 ArrayIndexOutOfBounds</span>
+  <span class="opt" onclick="answer('q4','D',this)">D. tabAt 会自动加锁</span>
+  <div class="fb"></div>
+</div>
+
+<div class="quiz" data-q="q5">
+  <h3>Q5. 一个桶链表长度达到 8，但 table 容量只有 32，会发生什么？</h3>
+  <span class="opt" onclick="answer('q5','A',this)">A. 立即把链表转成红黑树</span>
+  <span class="opt" onclick="answer('q5','B',this)">B. 不转树，因为容量 &lt; 64，treeifyBin 会改为先扩容</span>
+  <span class="opt" onclick="answer('q5','C',this)">C. 抛异常</span>
+  <span class="opt" onclick="answer('q5','D',this)">D. 把链表清空</span>
+  <div class="fb"></div>
+</div>
+
+<div class="quiz" data-q="q6">
+  <h3>Q6. 在 ConcurrentHashMap 上做「if (!containsKey) put」会有什么问题？</h3>
+  <span class="opt" onclick="answer('q6','A',this)">A. 没问题，containsKey 和 put 都是线程安全的</span>
+  <span class="opt" onclick="answer('q6','B',this)">B. check-then-act 复合操作不原子，两线程可能都通过判断后都 put，应改用 putIfAbsent/computeIfAbsent</span>
+  <span class="opt" onclick="answer('q6','C',this)">C. 会死锁</span>
+  <span class="opt" onclick="answer('q6','D',this)">D. containsKey 会抛 NPE</span>
+  <div class="fb"></div>
+</div>
+
+<div class="quiz" data-q="q7">
+  <h3>Q7. ConcurrentHashMap（锁分桶）与 Go sync.Map 的核心设计差异是？</h3>
+  <span class="opt" onclick="answer('q7','A',this)">A. 两者完全相同</span>
+  <span class="opt" onclick="answer('q7','B',this)">B. CHM 靠锁分桶（写锁单桶、读无锁）；sync.Map 靠 read/dirty 双 map 读写分离，最适合读多写少</span>
+  <span class="opt" onclick="answer('q7','C',this)">C. sync.Map 用 ReentrantLock</span>
+  <span class="opt" onclick="answer('q7','D',this)">D. CHM 不支持并发读</span>
+  <div class="fb"></div>
+</div>
+
+<h2 id="action">课后首要行动</h2>
+
+<ol>
+  <li><strong>读源码标注 putVal 四条路径</strong>：打开 JDK 的 <code>ConcurrentHashMap.java</code>，在 <code>putVal</code> 里亲手标出 initTable / casTabAt / helpTransfer / synchronized 四个分支，对照本课流程图。</li>
+  <li><strong>验证 size() 弱一致</strong>：写一个 demo，10 个线程各 put 10000 次，主线程循环打印 size()，观察它在 put 期间是估算值、结束后才精确。</li>
+  <li><strong>对比 putIfAbsent 与 check-then-act</strong>：用 50 个线程对同一 key 跑「containsKey + put」和「computeIfAbsent」，统计 compute 被调用的次数，亲眼看到前者的竞态。</li>
+  <li><strong>在 clickhouse-mcp-server 落地</strong>：用 <code>ConcurrentHashMap</code> 做一层 query 结果本地缓存或连接元数据表，作为项目里能讲的真实并发结构案例。</li>
+  <li><strong>画一张「锁原语 → 数据结构」串联图</strong>：把 L14 的 CAS/volatile/synchronized 锁升级 与本课的 casTabAt/tabAt/synchronized 桶头/sizeCtl 逐项对齐，存进 vault 笔记。</li>
+</ol>
+
+<h2 id="source">Primary Source</h2>
+
+<ul>
+  <li><strong>JDK 源码</strong>：<a href="https://github.com/openjdk/jdk/blob/master/src/java.base/share/classes/java/util/concurrent/ConcurrentHashMap.java" target="_blank">ConcurrentHashMap.java</a>（putVal / get / transfer / addCount 全在这里）</li>
+  <li><strong>LongAdder 思想</strong>：<a href="https://github.com/openjdk/jdk/blob/master/src/java.base/share/classes/java/util/concurrent/atomic/LongAdder.java" target="_blank">LongAdder.java</a> / <a href="https://github.com/openjdk/jdk/blob/master/src/java.base/share/classes/java/util/concurrent/atomic/Striped64.java" target="_blank">Striped64.java</a>（CounterCell 同源）</li>
+  <li><strong>JMM / volatile 数组元素</strong>：<a href="https://docs.oracle.com/javase/specs/jls/se17/html/jls-17.html" target="_blank">JLS §17 Threads and Locks</a>（为什么数组元素需要 Unsafe）</li>
+  <li><strong>API 文档</strong>：<a href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/util/concurrent/ConcurrentHashMap.html" target="_blank">ConcurrentHashMap (Java 17 API)</a>（弱一致迭代器、size 估算的官方说明）</li>
+  <li><strong>关联课程</strong>：<a href="0006-java-thread-pool.html">L06 线程池场景</a> · <a href="0014-java-locks-aqs.html">L14 CAS/synchronized/AQS</a> · <a href="0015-go-sync-package.html">L15 Go sync.Map 对照</a></li>
+</ul>
+
+<blockquote>
+  <p><strong>有问题？</strong> 需要我展开 transfer 分段迁移的 CAS 细节、画 ForwardingNode 转发查找图、或对比 ConcurrentHashMap 与 ConcurrentSkipListMap 的取舍？</p>
+</blockquote>
+
+<script>
+const ANSWERS = { q1:'B', q2:'C', q3:'B', q4:'B', q5:'B', q6:'B', q7:'B' };
+const EXPLAIN = {
+  q1:'JDK8 抛弃 Segment，回到 Node 数组+链表/红黑树，锁粒度细化到单桶头，并发度=桶数随扩容增长，不再固定为 Segment 数。',
+  q2:'hash == MOVED(-1) 是 ForwardingNode，表示该桶正在迁移、整表正在扩容。此时 put 不等待，调 helpTransfer 加入搬迁，搬完后自旋重试。',
+  q3:'单个 AtomicLong 是单点 CAS，高并发成热点、失败自旋、缓存行抖动。baseCount + CounterCell[] 把计数散到多缓存行，求和得 size，正是 LongAdder/Striped64 思想。',
+  q4:'volatile 修饰的是数组引用变量，不是元素槽位。直接 table[i] 是普通读可能拿到旧值，必须用 tabAt（Unsafe acquire 读）保证元素可见。',
+  q5:'treeifyBin 内有守卫：tab.length < 64(MIN_TREEIFY_CAPACITY) 时改为 tryPresize 扩容，而不是转树。链长≥8 且容量≥64 才真正转红黑树。',
+  q6:'containsKey 与 put 各自原子，但合在一起的 check-then-act 不原子，两线程可能都通过判断再都 put。应用原子的 putIfAbsent 或 computeIfAbsent（后者还保证 compute 只跑一次）。',
+  q7:'CHM 锁分桶：写锁单桶头、读无锁，适合读写都频繁。Go sync.Map 用 read（只读无锁）+ dirty（加锁）双 map 读写分离，最适合读多写少、key 稳定的缓存场景，写多时反而慢。'
+};
+const answered = {};
+function answer(qid, choice, el) {
+  if (answered[qid]) return;
+  answered[qid] = true;
+  const box = document.querySelector('[data-q="'+qid+'"]');
+  const fb = box.querySelector('.fb');
+  const correct = ANSWERS[qid];
+  if (choice === correct) {
+    el.classList.add('correct');
+    fb.innerHTML = '✅ 正确！' + EXPLAIN[qid];
+  } else {
+    el.classList.add('wrong');
+    box.querySelectorAll('.opt').forEach(o => {
+      if (o.getAttribute('onclick').includes("'"+correct+"'")) o.classList.add('correct');
+    });
+    fb.innerHTML = '❌ 正确答案是 ' + correct + '。' + EXPLAIN[qid];
+  }
+  fb.classList.add('show');
+  updateTotal();
+}
+function updateTotal() {
+  let score = 0;
+  for (const q in answered) {
+    const box = document.querySelector('[data-q="'+q+'"]');
+    if (box.querySelector('.opt.correct') && !box.querySelector('.opt.wrong')) score++;
+  }
+  document.getElementById('score').textContent = score;
+  if (score === 7) document.getElementById('banner').style.display = 'block';
+}
+</script>
+
+</body>
+</html>
