@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 14 — Hot 150: Array / String 高频 5 题</title>
+<style>
+  :root {
+    --ink: #1a1a1a; --muted: #555; --accent: #1a6b3c; --accent2: #2563eb;
+    --bg: #fafaf8; --card: #ffffff; --border: #e0ddd8; --code-bg: #f4f1eb;
+    --warn: #fff3cd; --success: #d4edda;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Georgia', 'Times New Roman', serif;
+    font-size: 17px; line-height: 1.75;
+    color: var(--ink); background: var(--bg);
+    max-width: 800px; margin: 0 auto; padding: 48px 24px 80px;
+  }
+  h1 { font-size: 2rem; font-weight: 700; margin-bottom: 0.3em; }
+  h2 { font-size: 1.35rem; font-weight: 700; margin: 2.2em 0 0.7em; border-bottom: 2px solid var(--border); padding-bottom: 0.3em; }
+  h3 { font-size: 1.1rem; font-weight: 700; margin: 1.6em 0 0.5em; }
+  p, li { margin-bottom: 0.7em; }
+  ul, ol { margin: 0.5em 0 1em 1.5em; }
+  pre {
+    background: #0f172a; color: #e2e8f0; padding: 14px 18px; border-radius: 6px;
+    font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; line-height: 1.6;
+    overflow-x: auto; margin: 1em 0;
+  }
+  code { font-family: 'JetBrains Mono', monospace; font-size: 0.88em; background: var(--code-bg); padding: 2px 5px; border-radius: 3px; }
+  pre code { background: transparent; padding: 0; color: inherit; }
+  blockquote { border-left: 4px solid var(--accent2); background: #f0f7ff; padding: 12px 20px; margin: 1.2em 0; border-radius: 0 6px 6px 0; }
+  blockquote p { margin-bottom: 0; }
+  .meta { color: var(--muted); font-family: monospace; font-size: 0.85rem; margin-bottom: 2em; }
+  .tag { display: inline-block; font-family: monospace; font-size: 0.75rem; padding: 2px 8px; border-radius: 10px; }
+  .tag.e { background: #d4edda; color: #155724; }
+  .tag.m { background: #fff3cd; color: #856404; }
+  .tag.h { background: #f8d7da; color: #721c24; }
+  .tag.p { background: #dbeafe; color: #1e40af; }
+  .problem { border: 1px solid var(--border); border-radius: 6px; padding: 16px 20px; margin: 1.2em 0; background: var(--card); }
+  .problem h3 { margin-top: 0; border: none; }
+  .nav { font-family: monospace; font-size: 0.8rem; margin-bottom: 2.5em; color: var(--muted); }
+  .nav a { color: var(--accent2); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin: 1em 0; }
+  th { background: #f1f5f9; padding: 8px 12px; text-align: left; border: 1px solid #e2e8f0; }
+  td { padding: 8px 12px; border: 1px solid #e2e8f0; }
+  @media print { body { font-size: 12px; } pre { font-size: 9px; } }
+</style>
+</head>
+<body>
+
+<div class="nav">
+  <a href="../leetcode/Hot150-进度.md">← 进度表</a>
+</div>
+
+<h1>Hot 150: Array / String</h1>
+<p style="font-size: 1.1rem; color: var(--muted); margin-bottom: 0.5em;">高频 5 题 · 每种一个核心模式</p>
+<div class="meta">Lesson 14 · 2026-06-20 · ⏱ 20 min</div>
+
+<blockquote>
+<p><strong>策略</strong>：Array/String 是 LeetCode 最大的分类（~22 题），但核心模式只有 5 种。掌握这 5 种模式，22 题里 80% 可以秒。</p>
+</blockquote>
+
+<h2>五种模式</h2>
+
+<table>
+  <tr><th>模式</th><th>代表题</th><th>复杂度</th></tr>
+  <tr><td>track min/max</td><td>121. Best Time to Buy and Sell Stock</td><td><span class="tag e">Easy</span></td></tr>
+  <tr><td>Boyer-Moore 投票</td><td>169. Majority Element</td><td><span class="tag e">Easy</span></td></tr>
+  <tr><td>前缀/后缀积</td><td>238. Product of Array Except Self</td><td><span class="tag m">Medium</span></td></tr>
+  <tr><td>反转技巧</td><td>189. Rotate Array</td><td><span class="tag m">Medium</span></td></tr>
+  <tr><td>贪心可达性</td><td>55. Jump Game</td><td><span class="tag m">Medium</span></td></tr>
+</table>
+
+<hr style="margin: 2em 0; border: none; border-top: 1px solid var(--border);">
+
+<div class="problem">
+  <h3>#1 模式：track min/max <span class="tag e">Easy</span></h3>
+  <p><strong>121. Best Time to Buy and Sell Stock</strong></p>
+  <p>一次买卖，最大利润。</p>
+  <p><strong>模式</strong>：遍历时维护"到当前为止的最小价格"，每天算"今天卖能赚多少"，取最大。</p>
+  <pre><code>public int maxProfit(int[] prices) {
+    int minPrice = Integer.MAX_VALUE;
+    int maxProfit = 0;
+    for (int p : prices) {
+        if (p &lt; minPrice) minPrice = p;
+        else maxProfit = Math.max(maxProfit, p - minPrice);
+    }
+    return maxProfit;
+}</code></pre>
+  <p><strong>变体</strong>：122. Best Time to Buy and Sell Stock II（多次交易 → 累加所有上升段）</p>
+</div>
+
+<div class="problem">
+  <h3>#2 模式：Boyer-Moore 投票 <span class="tag e">Easy</span></h3>
+  <p><strong>169. Majority Element</strong></p>
+  <p>找到出现次数 > n/2 的元素。</p>
+  <p><strong>模式</strong>：候选 + 计数。遇到相同 +1，不同 -1，归零时换候选。最后剩下的就是众数。</p>
+  <pre><code>public int majorityElement(int[] nums) {
+    int candidate = 0, count = 0;
+    for (int n : nums) {
+        if (count == 0) candidate = n;
+        count += (n == candidate) ? 1 : -1;
+    }
+    return candidate;
+}</code></pre>
+  <p><strong>直觉</strong>：众数个数超过一半，和其他数一一抵消后一定剩它。</p>
+</div>
+
+<div class="problem">
+  <h3>#3 模式：前缀/后缀 <span class="tag m">Medium</span></h3>
+  <p><strong>238. Product of Array Except Self</strong></p>
+  <p>输出每个位置除自身外的乘积，不能用除法。</p>
+  <p><strong>模式</strong>：两遍遍历。第一遍算每个位置左边的乘积，第二遍乘上右边的乘积。</p>
+  <pre><code>public int[] productExceptSelf(int[] nums) {
+    int n = nums.length;
+    int[] ans = new int[n];
+    ans[0] = 1;
+    for (int i = 1; i &lt; n; i++)          // 左边乘积
+        ans[i] = ans[i-1] * nums[i-1];
+    int right = 1;
+    for (int i = n-1; i &gt;= 0; i--) {      // 乘上右边
+        ans[i] *= right;
+        right *= nums[i];
+    }
+    return ans;
+}</code></pre>
+  <p><strong>面试常问</strong>：follow-up O(1) 额外空间（不计输出数组）→ 就是上面的答案。</p>
+</div>
+
+<div class="problem">
+  <h3>#4 模式：反转技巧 <span class="tag m">Medium</span></h3>
+  <p><strong>189. Rotate Array</strong></p>
+  <p>数组右移 k 步。</p>
+  <p><strong>模式</strong>：三步反转。反转整体 → 反转前 k 个 → 反转后 n-k 个。</p>
+  <pre><code>public void rotate(int[] nums, int k) {
+    int n = nums.length;
+    k %= n;
+    reverse(nums, 0, n-1);
+    reverse(nums, 0, k-1);
+    reverse(nums, k, n-1);
+}
+private void reverse(int[] a, int l, int r) {
+    while (l &lt; r) {
+        int t = a[l]; a[l] = a[r]; a[r] = t;
+        l++; r--;
+    }
+}</code></pre>
+  <p><strong>为什么不用额外数组</strong>：O(1) 空间，面试倾向于问这个解法。</p>
+</div>
+
+<div class="problem">
+  <h3>#5 模式：贪心可达性 <span class="tag m">Medium</span></h3>
+  <p><strong>55. Jump Game</strong></p>
+  <p>能不能跳到最后一个位置。</p>
+  <p><strong>模式</strong>：维护"当前能跳到的最远位置"，遍历每个位置，如果到了最远还没到终点就 false。</p>
+  <pre><code>public boolean canJump(int[] nums) {
+    int maxReach = 0;
+    for (int i = 0; i &lt;= maxReach; i++) {
+        maxReach = Math.max(maxReach, i + nums[i]);
+        if (maxReach &gt;= nums.length - 1) return true;
+    }
+    return false;
+}</code></pre>
+  <p><strong>注意</strong>：遍历条件是 <code>i &lt;= maxReach</code>，不是 <code>i &lt; n</code>——遇到 0 堵路时自动停下。</p>
+</div>
+
+<h2>刷题清单</h2>
+<p>按上述模式对应的 Hot 150 题目，自测用：</p>
+<table>
+  <tr><th>题号</th><th>题目</th><th>模式</th><th>状态</th></tr>
+  <tr><td>121</td><td>Best Time to Buy and Sell Stock</td><td>track min</td><td>☐</td></tr>
+  <tr><td>122</td><td>Best Time to Buy and Sell Stock II</td><td>累加上升</td><td>☐</td></tr>
+  <tr><td>169</td><td>Majority Element</td><td>Boyer-Moore</td><td>☐</td></tr>
+  <tr><td>238</td><td>Product of Array Except Self</td><td>前缀/后缀</td><td>☐</td></tr>
+  <tr><td>189</td><td>Rotate Array</td><td>反转</td><td>☐</td></tr>
+  <tr><td>55</td><td>Jump Game</td><td>贪心</td><td>☐</td></tr>
+  <tr><td>45</td><td>Jump Game II</td><td>贪心+BFS</td><td>☐</td></tr>
+  <tr><td>274</td><td>H-Index</td><td>计数排序</td><td>☐</td></tr>
+  <tr><td>380</td><td>Insert Delete GetRandom O(1)</td><td>哈希+数组</td><td>☐</td></tr>
+  <tr><td>88</td><td>Merge Sorted Array</td><td>双指针从后</td><td>☐</td></tr>
+</table>
+
+<hr style="margin: 2em 0; border: none; border-top: 1px solid var(--border);">
+
+<h2>下节预告</h2>
+<p>Two Pointers — 125. Valid Palindrome / 167. Two Sum II / 15. 3Sum / 11. Container With Most Water</p>
+
+<blockquote>
+  <p><strong>有问题？</strong> 某道题不理解？某类模式不熟？直接问我。</p>
+</blockquote>
+
+</body>
+</html>
