@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 18 — CompletableFuture 异步编排与组合</title>
+<style>
+  :root {
+    --ink: #1a1a1a;
+    --muted: #555;
+    --accent: #1a6b3c;
+    --accent2: #2563eb;
+    --accent3: #7c3aed;
+    --bg: #fafaf8;
+    --card: #ffffff;
+    --border: #e0ddd8;
+    --code-bg: #f4f1eb;
+    --warn: #fff3cd;
+    --warn-border: #ffc107;
+    --success: #d4edda;
+    --success-border: #28a745;
+    --danger: #f8d7da;
+    --danger-border: #dc3545;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Georgia', 'Times New Roman', serif;
+    font-size: 17px;
+    line-height: 1.75;
+    color: var(--ink);
+    background: var(--bg);
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 48px 24px 80px;
+  }
+  h1 { font-size: 2rem; font-weight: 700; margin-bottom: 0.3em; }
+  h2 { font-size: 1.35rem; font-weight: 700; margin: 2.2em 0 0.7em; border-bottom: 2px solid var(--border); padding-bottom: 0.3em; }
+  h3 { font-size: 1.1rem; font-weight: 700; margin: 1.6em 0 0.5em; }
+  p, li { margin-bottom: 0.8em; }
+  ul, ol { margin: 0.5em 0 1em 1.5em; }
+  li { margin-bottom: 0.3em; }
+  a { color: var(--accent2); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .meta { color: var(--muted); font-family: monospace; font-size: 0.85rem; margin-bottom: 2em; }
+  .nav { font-family: monospace; font-size: 0.8rem; margin-bottom: 2.5em; color: var(--muted); }
+  .nav a { color: var(--accent2); }
+
+  .sidebar { position: fixed; top: 48px; left: calc(50% - 620px); width: 200px; font-family: monospace; font-size: 0.78rem; line-height: 1.9; }
+  .sidebar a { color: var(--muted); display: block; }
+  .sidebar a:hover { color: var(--accent2); }
+  @media (max-width: 1100px) { .sidebar { display: none; } }
+
+  code {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.88em;
+    background: var(--code-bg);
+    padding: 2px 5px;
+    border-radius: 3px;
+  }
+  pre {
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 16px 20px;
+    border-radius: 6px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.82rem;
+    line-height: 1.6;
+    overflow-x: auto;
+    margin: 1em 0;
+  }
+  pre code { background: transparent; padding: 0; color: inherit; }
+  .cmt { color: #7e8aa0; }
+  .kw { color: #7dd3fc; }
+  .str { color: #86efac; }
+  .num { color: #fca5a5; }
+  .fn { color: #fcd34d; }
+
+  blockquote {
+    border-left: 4px solid var(--accent2);
+    background: #f0f7ff;
+    padding: 12px 20px;
+    margin: 1.2em 0;
+    border-radius: 0 6px 6px 0;
+  }
+
+  .callout {
+    border-left: 4px solid var(--accent);
+    background: #e8f5e9;
+    padding: 12px 20px;
+    margin: 1.2em 0;
+    border-radius: 0 6px 6px 0;
+  }
+  .callout.warn { border-left-color: var(--warn-border); background: var(--warn); }
+  .callout.danger { border-left-color: var(--danger-border); background: var(--danger); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin: 1em 0; }
+  th { background: #f1f5f9; padding: 8px 12px; text-align: left; border: 1px solid #e2e8f0; font-weight: 600; }
+  td { padding: 8px 12px; border: 1px solid #e2e8f0; vertical-align: top; }
+  tr:nth-child(even) td { background: #fafaf8; }
+
+  .flow { font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; line-height: 2; background: var(--code-bg); padding: 12px 18px; border-radius: 6px; }
+  .flow .arrow { color: var(--muted); }
+
+  .quiz { background: var(--card); border: 2px solid var(--border); border-radius: 8px; padding: 20px 24px; margin: 1.4em 0; }
+  .quiz h3 { margin-top: 0; border: none; }
+  .quiz .opt { display: block; cursor: pointer; padding: 6px 10px; margin: 4px 0; border: 1px solid var(--border); border-radius: 5px; transition: background 0.15s; }
+  .quiz .opt:hover { background: #f1f5f9; }
+  .quiz .opt.correct { background: var(--success); border-color: var(--success-border); }
+  .quiz .opt.wrong { background: var(--danger); border-color: var(--danger-border); }
+  .quiz .fb { margin-top: 8px; font-size: 0.88rem; display: none; }
+  .quiz .fb.show { display: block; }
+  #scorebar { position: sticky; top: 0; background: var(--card); border: 2px solid var(--accent); border-radius: 8px; padding: 10px 16px; font-family: monospace; z-index: 10; margin: 1em 0; }
+  #banner { display: none; background: var(--success); border: 2px solid var(--success-border); border-radius: 8px; padding: 16px; text-align: center; font-weight: 700; margin: 1em 0; }
+
+  .check { background: #fffdf5; border: 1px dashed var(--warn-border); border-radius: 6px; padding: 12px 18px; margin: 1.2em 0; }
+  details summary { cursor: pointer; color: var(--accent2); }
+
+  @media print { body { font-size: 12px; padding: 12px; max-width: 100%; } pre { font-size: 9px; } .sidebar { display: none; } }
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <strong>本课导航</strong>
+  <a href="#connect">▸ 开篇连接</a>
+  <a href="#pre">▸ 前置检查</a>
+  <a href="#s1">1. 创建：supplyAsync 与线程池</a>
+  <a href="#s2">2. 变换链 thenApply/Compose</a>
+  <a href="#s3">3. *Async 与线程归属</a>
+  <a href="#s4">4. 组合 combine/allOf/anyOf</a>
+  <a href="#s5">5. 异常三件套</a>
+  <a href="#s6">6. 超时控制</a>
+  <a href="#s7">7. 实战：并行分片查询</a>
+  <a href="#s8">8. 陷阱清单</a>
+  <a href="#s9">9. 横向对照与跨课串联</a>
+  <a href="#interview">▸ 面试话术</a>
+  <a href="#quiz">▸ 章末 Quiz</a>
+  <a href="#action">▸ 课后行动</a>
+  <a href="#source">▸ Primary Source</a>
+</div>
+
+<div class="nav">
+  <a href="../lesson-index.html">← 课程目录</a> ·
+  <a href="0006-java-thread-pool.html">L06 线程池</a> ·
+  <a href="0014-java-locks-aqs.html">L14 锁/AQS</a> ·
+  <a href="0017-jmm-happens-before.html">L17 JMM</a> ·
+  <a href="0007-threadlocal-internals.html">L07 ThreadLocal</a>
+</div>
+
+<h1>CompletableFuture 异步编排与组合</h1>
+<p style="font-size: 1.1rem; color: var(--muted); margin-bottom: 0.5em;">创建 / 转换 / 组合 / 异常 / 超时 · *Async 线程归属 · commonPool 陷阱 · fan-out/fan-in</p>
+<div class="meta">Lesson 18 · 2026-06-23 · ⏱ 50 min · 进阶</div>
+
+<h2 id="connect">开篇连接</h2>
+<blockquote>
+<p>L06 你学会了<strong>自定义 ThreadPoolExecutor</strong> 和 CallerRunsPolicy 背压——但只是"把任务丢进去"，没解决"任务之间有依赖、要并行 fan-out 再聚合 fan-in"。这一课用 <code>CompletableFuture</code> 补上<strong>编排</strong>这一层：把"串行阻塞 <code>future.get()</code>"重构成"并行 + 依赖链 + 异常兜底 + 超时"。面试高频三连——<em>thenApply 与 thenCompose 区别 / 回调在哪个线程跑 / 多个 RPC 怎么并行</em>——学完都能现场推导。落地锚点是你 GitHub 第 5 项 <code>batch-import-optimizer</code>：把 10 万条数据"分批 → 并行处理 → 聚合 → 收集失败批次"，以及 <code>clickhouse-mcp-server</code> 多分片查询的并行扇出。</p>
+</blockquote>
+
+<h2 id="pre">前置检查</h2>
+
+<div class="check">
+  <p><strong>前置 1</strong>（来自 L06）：<code>Future.get()</code> 为什么阻塞？三个 <code>Future</code> 依次 <code>get()</code> 的性能问题在哪？</p>
+  <details><summary>点开核对</summary>
+  <p><code>get()</code> 会阻塞调用线程直到结果就绪——它是<strong>拉模型（pull）</strong>，你主动去等。三个 Future 依次 get，虽然任务在线程池里可能已并行提交，但你的取值是<strong>串行等待</strong>：总耗时 ≈ max 还是 sum？取决于你提交顺序，但只要在 get(A) 没返回前不去 get(B)，就有"前一个没到、后一个干等"的窗口，且无法在结果就绪时<strong>回调</strong>触发下一步——只能轮询或阻塞。CompletableFuture 是<strong>推模型（push）</strong>：完成时主动回调，天然支持依赖编排。</p>
+  </details>
+</div>
+
+<div class="check">
+  <p><strong>前置 2</strong>（来自 L06）：自定义 <code>ThreadPoolExecutor</code> 的核心 7 参数是什么？为什么 IO 密集任务不能用 <code>ForkJoinPool.commonPool()</code>？</p>
+  <details><summary>点开核对</summary>
+  <p>7 参数：corePoolSize、maximumPoolSize、keepAliveTime、unit、workQueue、threadFactory、handler（拒绝策略）。commonPool 默认并行度 = <code>CPU 核数 - 1</code>，是为<strong>CPU 密集、短任务、work-stealing</strong> 设计的；IO 密集任务会长时间占住线程，几个阻塞调用就能耗尽公共池，导致<strong>全 JVM 共享 commonPool 的所有并行流 / CompletableFuture 连锁卡死</strong>。所以 IO 场景必须传自定义 Executor。</p>
+  </details>
+</div>
+
+<div class="check">
+  <p><strong>前置 3</strong>（来自 L17）：<code>volatile</code> 如何保证一写一读的可见性？这与"异步回调能读到任务结果"有什么关系？</p>
+  <details><summary>点开核对</summary>
+  <p>volatile 写插 StoreLoad 屏障刷出 store buffer，volatile 读使缓存失效从主存读，建立 <strong>写 happens-before 读</strong>。CompletableFuture 内部用 volatile <code>result</code> 字段 + CAS：任务线程写 result（带 volatile 语义），回调线程读 result——<strong>任务完成 happens-before 回调执行</strong>，所以回调里能安全读到结果，哪怕跨了线程池线程。这正是本课第 9 节要回贴 L17 的点。</p>
+  </details>
+</div>
+
+<h2 id="s1">1. 创建：supplyAsync / runAsync 与线程池</h2>
+
+<p>四个入口方法，区别只在"有无返回值"和"用哪个线程池"：</p>
+
+<table>
+<tr><th>方法</th><th>返回</th><th>线程池</th></tr>
+<tr><td><code>supplyAsync(Supplier)</code></td><td>有结果 <code>CF&lt;T&gt;</code></td><td>commonPool</td></tr>
+<tr><td><code>supplyAsync(Supplier, executor)</code></td><td>有结果 <code>CF&lt;T&gt;</code></td><td>自定义</td></tr>
+<tr><td><code>runAsync(Runnable)</code></td><td>无结果 <code>CF&lt;Void&gt;</code></td><td>commonPool</td></tr>
+<tr><td><code>runAsync(Runnable, executor)</code></td><td>无结果 <code>CF&lt;Void&gt;</code></td><td>自定义</td></tr>
+</table>
+
+<pre><code><span class="kw">private static final</span> ExecutorService POOL = <span class="kw">new</span> ThreadPoolExecutor(
+    <span class="num">8</span>, <span class="num">16</span>, <span class="num">60L</span>, TimeUnit.SECONDS,
+    <span class="kw">new</span> LinkedBlockingQueue&lt;&gt;(<span class="num">200</span>),
+    <span class="kw">new</span> ThreadFactoryBuilder().setNameFormat(<span class="str">"ch-query-%d"</span>).build(),
+    <span class="kw">new</span> ThreadPoolExecutor.CallerRunsPolicy()); <span class="cmt">// L06 背压</span>
+
+CompletableFuture&lt;String&gt; cf = CompletableFuture.<span class="fn">supplyAsync</span>(
+    () -&gt; queryShard(<span class="str">"shard-1"</span>), POOL);  <span class="cmt">// 始终传自定义池！</span></code></pre>
+
+<div class="callout warn">
+<p><strong>第一性原则</strong>：只要任务里有 IO（DB / RPC / HTTP），<strong>永远显式传 Executor</strong>。不传 = 用 commonPool = 和全 JVM 所有人抢 CPU-1 个线程。</p>
+</div>
+
+<h2 id="s2">2. 变换链：thenApply vs thenCompose vs thenCombine</h2>
+
+<p>心智模型直接对标函数式：<strong>thenApply = map，thenCompose = flatMap，thenCombine = zip</strong>。</p>
+
+<table>
+<tr><th>方法</th><th>入参函数签名</th><th>用途</th><th>类比</th></tr>
+<tr><td><code>thenApply</code></td><td><code>T -&gt; U</code></td><td>同步映射结果</td><td>map</td></tr>
+<tr><td><code>thenCompose</code></td><td><code>T -&gt; CF&lt;U&gt;</code></td><td>串接另一个异步调用，平铺</td><td>flatMap</td></tr>
+<tr><td><code>thenCombine</code></td><td><code>(T,U) -&gt; V</code></td><td>合并两个独立 CF 的结果</td><td>zip</td></tr>
+<tr><td><code>thenAccept</code></td><td><code>T -&gt; void</code></td><td>消费结果，无返回</td><td>forEach</td></tr>
+<tr><td><code>thenRun</code></td><td><code>() -&gt; void</code></td><td>不关心结果，跑个收尾</td><td>—</td></tr>
+</table>
+
+<p>关键区别：当下一步本身返回 <code>CompletableFuture</code> 时，用 <code>thenApply</code> 会得到嵌套 <code>CF&lt;CF&lt;U&gt;&gt;</code>，必须用 <code>thenCompose</code> 平铺。</p>
+
+<pre><code><span class="cmt">// getUser 返回 CF&lt;User&gt;，getOrders 返回 CF&lt;List&lt;Order&gt;&gt;</span>
+
+<span class="cmt">// ❌ 嵌套地狱：CF&lt;CF&lt;List&lt;Order&gt;&gt;&gt;</span>
+CompletableFuture&lt;CompletableFuture&lt;List&lt;Order&gt;&gt;&gt; bad =
+    getUser(id).<span class="fn">thenApply</span>(u -&gt; getOrders(u.getId()));
+
+<span class="cmt">// ✅ 平铺：CF&lt;List&lt;Order&gt;&gt;</span>
+CompletableFuture&lt;List&lt;Order&gt;&gt; good =
+    getUser(id).<span class="fn">thenCompose</span>(u -&gt; getOrders(u.getId()));
+
+<span class="cmt">// thenApply 用于纯同步变换（无新异步调用）</span>
+CompletableFuture&lt;String&gt; name =
+    getUser(id).<span class="fn">thenApply</span>(User::getName);  <span class="cmt">// User -&gt; String，map</span></code></pre>
+
+<div class="check">
+  <p><strong>即时检验</strong>：<code>queryUser(id)</code> 返回 <code>CF&lt;User&gt;</code>，<code>queryProfile(user)</code> 返回 <code>CF&lt;Profile&gt;</code>。要把 user 串到 profile，用哪个方法？为什么不能用 thenApply？</p>
+  <details><summary>核对</summary><p><code>thenCompose</code>。因为 queryProfile 返回的是 <code>CF&lt;Profile&gt;</code>，thenApply 会包成 <code>CF&lt;CF&lt;Profile&gt;&gt;</code>，需要 flatMap 语义平铺成 <code>CF&lt;Profile&gt;</code>。</p></details>
+</div>
+
+<h2 id="s3">3. *Async 后缀与线程归属</h2>
+
+<p>这是面试"哪个线程执行"的核心。每个变换方法都有三个重载，决定回调跑在哪：</p>
+
+<table>
+<tr><th>形式</th><th>回调执行线程</th></tr>
+<tr><td><code>thenApply(fn)</code>（无 Async）</td><td>谁完成上游就用谁的线程；若上游<strong>已完成</strong>，则用<strong>调用者线程</strong>（同步执行）</td></tr>
+<tr><td><code>thenApplyAsync(fn)</code></td><td>提交到 <strong>commonPool</strong></td></tr>
+<tr><td><code>thenApplyAsync(fn, executor)</code></td><td>提交到<strong>指定 Executor</strong></td></tr>
+</table>
+
+<pre><code>CompletableFuture.<span class="fn">supplyAsync</span>(() -&gt; step1(), POOL)   <span class="cmt">// 在 POOL 线程跑</span>
+    .<span class="fn">thenApply</span>(r -&gt; step2(r))                    <span class="cmt">// 通常仍在 POOL 线程（沿用上游）</span>
+    .<span class="fn">thenApplyAsync</span>(r -&gt; step3(r))               <span class="cmt">// 跳到 commonPool！</span>
+    .<span class="fn">thenApplyAsync</span>(r -&gt; step4(r), POOL);          <span class="cmt">// 跳回 POOL</span></code></pre>
+
+<div class="callout">
+<p><strong>判定口诀</strong>：无 Async → 跟上游线程（或调用线程，若上游已就绪）；带 Async 无 executor → commonPool；带 Async + executor → 你指定的池。链式编排里如果每一步都要可控线程，<strong>统一用 <code>xxxAsync(fn, POOL)</code></strong>，别混。</p>
+</div>
+
+<div class="callout warn">
+<p><strong>易错点</strong>：<code>thenApply</code>（无 Async）<em>不保证</em>不在调用线程跑。当上游 future <strong>此刻已经完成</strong>，回调会<strong>同步在当前线程立即执行</strong>——这就是为什么"我以为回调异步、结果阻塞了主线程"的坑。</p>
+</div>
+
+<div class="check">
+  <p><strong>即时检验</strong>：<code>supplyAsync(task, POOL).thenApply(f1).thenApplyAsync(f2)</code>，假设 task 耗时未完成。f1 和 f2 分别在哪个线程？</p>
+  <details><summary>核对</summary><p>f1 在 <strong>POOL 线程</strong>（沿用上游完成线程，无 Async）；f2 在 <strong>commonPool</strong>（thenApplyAsync 未传 executor）。</p></details>
+</div>
+
+<h2 id="s4">4. 组合：thenCombine / allOf / anyOf</h2>
+
+<h3>thenCombine — 两个独立任务并行后合并</h3>
+<pre><code>CompletableFuture&lt;Integer&gt; a = CompletableFuture.<span class="fn">supplyAsync</span>(() -&gt; countA(), POOL);
+CompletableFuture&lt;Integer&gt; b = CompletableFuture.<span class="fn">supplyAsync</span>(() -&gt; countB(), POOL);
+CompletableFuture&lt;Integer&gt; sum = a.<span class="fn">thenCombine</span>(b, (x, y) -&gt; x + y);
+<span class="cmt">// a、b 并行跑，都完成后合并；总耗时 ≈ max(a,b)，不是 a+b</span></code></pre>
+
+<h3>allOf — fan-in，等全部完成</h3>
+<pre><code>List&lt;CompletableFuture&lt;Row&gt;&gt; futures = shards.stream()
+    .map(s -&gt; CompletableFuture.<span class="fn">supplyAsync</span>(() -&gt; queryShard(s), POOL))
+    .collect(Collectors.toList());
+
+CompletableFuture&lt;Void&gt; all = CompletableFuture.<span class="fn">allOf</span>(
+    futures.toArray(<span class="kw">new</span> CompletableFuture[<span class="num">0</span>]));
+
+<span class="cmt">// allOf 返回 CF&lt;Void&gt;，拿不到结果——完成后再 join 各子 future 取值</span>
+List&lt;Row&gt; rows = all.<span class="fn">thenApply</span>(v -&gt;
+    futures.stream().map(CompletableFuture::join).collect(Collectors.toList())
+).<span class="fn">join</span>();</code></pre>
+
+<div class="callout warn">
+<p><code>allOf</code> 的返回是 <code>CF&lt;Void&gt;</code>，<strong>不携带任何子结果</strong>。范式是：allOf 完成后，在 <code>thenApply</code> 里对原始 future 列表逐个 <code>join()</code>（此时它们都已完成，join 不阻塞）取值聚合。</p>
+</div>
+
+<h3>anyOf — 谁先完成用谁（如多副本取最快）</h3>
+<pre><code><span class="cmt">// 回调线程归属：allOf/anyOf 的后续回调，跑在「最后/最先完成那个任务的线程」上（无 Async 时）</span>
+CompletableFuture&lt;Object&gt; fastest = CompletableFuture.<span class="fn">anyOf</span>(replica1, replica2, replica3);</code></pre>
+
+<h2 id="s5">5. 异常处理三件套：exceptionally / handle / whenComplete</h2>
+
+<table>
+<tr><th>方法</th><th>上游正常</th><th>上游异常</th><th>能改结果？</th><th>函数签名</th></tr>
+<tr><td><code>exceptionally</code></td><td><strong>不</strong>执行（透传原值）</td><td>执行</td><td>能（提供兜底值）</td><td><code>Throwable -&gt; T</code></td></tr>
+<tr><td><code>handle</code></td><td>执行</td><td>执行</td><td>能（正常+异常都能改）</td><td><code>(T, Throwable) -&gt; U</code></td></tr>
+<tr><td><code>whenComplete</code></td><td>执行</td><td>执行</td><td><strong>不能</strong>（只观察，原值/原异常透传）</td><td><code>(T, Throwable) -&gt; void</code></td></tr>
+</table>
+
+<pre><code>queryShard(s)
+    .<span class="fn">exceptionally</span>(ex -&gt; {                  <span class="cmt">// 仅异常路径：返回兜底空行</span>
+        log.warn(<span class="str">"shard {} failed"</span>, s, ex);
+        <span class="kw">return</span> Row.EMPTY;
+    })
+    .<span class="fn">whenComplete</span>((row, ex) -&gt; {            <span class="cmt">// 观察：埋点/释放资源，不改结果</span>
+        meter.record(s, ex == <span class="kw">null</span>);
+    });
+
+<span class="cmt">// handle：无论成败都收口，常用于「成功取值 / 失败转默认」二合一</span>
+queryShard(s).<span class="fn">handle</span>((row, ex) -&gt; ex == <span class="kw">null</span> ? row : Row.EMPTY);</code></pre>
+
+<div class="callout danger">
+<p><strong>异常沿链短路</strong>：链中某步抛异常，后续所有 <code>thenApply / thenCompose</code> 都被<strong>跳过</strong>，异常一路传到第一个 <code>exceptionally / handle</code>。这和 try-catch 不同——它是数据流式的短路传播，包装成 <code>CompletionException</code>，记得 <code>getCause()</code> 拆包。</p>
+</div>
+
+<div class="check">
+  <p><strong>即时检验</strong>：上游<strong>正常完成</strong>时，<code>exceptionally</code> / <code>handle</code> / <code>whenComplete</code> 各会不会执行？</p>
+  <details><summary>核对</summary><p>exceptionally <strong>不执行</strong>（透传正常值）；handle <strong>执行</strong>（Throwable 为 null）；whenComplete <strong>执行</strong>（Throwable 为 null，但不能改结果）。</p></details>
+</div>
+
+<h2 id="s6">6. 超时控制（Java 9+）</h2>
+
+<table>
+<tr><th>方法（JDK9+）</th><th>超时行为</th></tr>
+<tr><td><code>orTimeout(t, unit)</code></td><td>超时则以 <code>TimeoutException</code> 异常完成</td></tr>
+<tr><td><code>completeOnTimeout(val, t, unit)</code></td><td>超时则以默认值 <code>val</code> 正常完成（降级兜底）</td></tr>
+</table>
+
+<pre><code>queryShard(s)
+    .<span class="fn">orTimeout</span>(<span class="num">2</span>, TimeUnit.SECONDS)              <span class="cmt">// 2s 没回 → TimeoutException</span>
+    .<span class="fn">exceptionally</span>(ex -&gt; Row.EMPTY);            <span class="cmt">// 配合兜底</span>
+
+<span class="cmt">// 或直接超时返回默认值（不抛异常）</span>
+queryShard(s).<span class="fn">completeOnTimeout</span>(Row.EMPTY, <span class="num">2</span>, TimeUnit.SECONDS);</code></pre>
+
+<div class="callout warn">
+<p><strong>JDK8 没有这两个方法</strong>。替代方案：自建一个 <code>ScheduledExecutorService</code>，到点调用 <code>future.completeExceptionally(new TimeoutException())</code>，用 <code>acceptEither</code> 或谁先完成谁生效来实现超时。注意：<strong>orTimeout 内部用的是公共的 Delayer 单线程调度器，超时回调跑在它上面，别在超时分支做重活</strong>。</p>
+</div>
+
+<h2 id="s7">7. 实战：并行查询多个 ClickHouse 分片 + batch-import 编排</h2>
+
+<p>把前面所有零件拼成生产级 fan-out / fan-in：<strong>并行扇出 → 单分片超时 + 异常兜底 → allOf 聚合 → 收集失败分片</strong>。</p>
+
+<pre><code><span class="kw">public</span> AggResult <span class="fn">queryAllShards</span>(List&lt;String&gt; shards, String sql) {
+    Map&lt;String, Throwable&gt; failures = <span class="kw">new</span> ConcurrentHashMap&lt;&gt;();
+
+    List&lt;CompletableFuture&lt;Row&gt;&gt; futures = shards.stream()
+        .map(s -&gt; CompletableFuture
+            .<span class="fn">supplyAsync</span>(() -&gt; client.query(s, sql), POOL)   <span class="cmt">// 自定义池</span>
+            .<span class="fn">orTimeout</span>(<span class="num">3</span>, TimeUnit.SECONDS)                  <span class="cmt">// 单片超时</span>
+            .<span class="fn">exceptionally</span>(ex -&gt; {                          <span class="cmt">// 失败不拖垮整体</span>
+                failures.put(s, ex);
+                <span class="kw">return</span> Row.EMPTY;
+            }))
+        .collect(Collectors.toList());
+
+    List&lt;Row&gt; rows = CompletableFuture
+        .<span class="fn">allOf</span>(futures.toArray(<span class="kw">new</span> CompletableFuture[<span class="num">0</span>]))
+        .<span class="fn">thenApply</span>(v -&gt; futures.stream()
+            .map(CompletableFuture::join)
+            .collect(Collectors.toList()))
+        .<span class="fn">join</span>();
+
+    <span class="kw">return</span> <span class="kw">new</span> AggResult(merge(rows), failures);  <span class="cmt">// 聚合 + 失败清单可重试</span>
+}</code></pre>
+
+<p><strong>batch-import-optimizer 变体</strong>：把 10 万条数据按 1000 条切批，每批一个 <code>supplyAsync(() -&gt; insertBatch(chunk), POOL)</code>，用 L06 的 <code>Semaphore</code> 限流 + CallerRunsPolicy 背压控制在途批数，allOf 聚合，<code>exceptionally</code> 把失败批次 chunkId 收进并发集合，最后对失败批次做有限次重试。这就是"分批 → 并行 → 聚合 → 重试"的完整骨架。</p>
+
+<h2 id="s8">8. 陷阱清单（面试高频追问）</h2>
+
+<ol>
+<li><strong>thenApply / thenApplyAsync 线程混淆</strong>：无 Async 不一定异步，上游已完成时会同步在调用线程跑，可能阻塞调用方。</li>
+<li><strong>commonPool 并行度 = CPU - 1</strong>：4 核机器只有 3 个线程，几个 IO 阻塞任务就耗尽，且全 JVM 共享 → 连锁卡死。IO 任务<strong>必须传自定义池</strong>。</li>
+<li><strong>cancel() 不中断底层任务</strong>：<code>cf.cancel(true)</code> 只把 future 标记为异常完成，<strong>不会真正中断已在跑的 supplyAsync 任务</strong>（mayInterruptIfRunning 对它无效），任务还在线程池里跑完。要可中断需自己持有 Thread/Future 并处理 interrupt。</li>
+<li><strong>异常被吞</strong>：链尾不接 exceptionally/handle，异常默默存在 future 里，不 join/get 就永远看不到——容易"静默失败"。</li>
+<li><strong>ThreadLocal / MDC 上下文丢失</strong>：thenXxxAsync 切线程后，<code>ThreadLocal</code>、日志 MDC traceId、事务上下文全部失效（伏笔 L07，解法 <code>TransmittableThreadLocal</code> 或装饰 Executor 透传上下文）。</li>
+<li><strong>join() vs get()</strong>：join 抛非受检 <code>CompletionException</code>，get 抛受检 <code>ExecutionException</code> + <code>InterruptedException</code>；流式编排里用 join 更顺手。</li>
+</ol>
+
+<h2 id="s9">9. 横向对照与跨课串联</h2>
+
+<table>
+<tr><th>能力</th><th>CompletableFuture (JDK)</th><th>ListenableFuture (Guava)</th><th>Mono (Project Reactor)</th></tr>
+<tr><td>风格</td><td>命令式回调链</td><td>回调 + Futures 工具类</td><td>声明式响应流</td></tr>
+<tr><td>flatMap</td><td>thenCompose</td><td>transformAsync</td><td>flatMap</td></tr>
+<tr><td>组合</td><td>allOf / anyOf / thenCombine</td><td>Futures.allAsList</td><td>zip / merge</td></tr>
+<tr><td>背压</td><td>无（靠线程池/Semaphore）</td><td>无</td><td>原生支持</td></tr>
+<tr><td>多值流</td><td>不支持（单值）</td><td>不支持</td><td>Flux 支持 0..N</td></tr>
+</table>
+
+<div class="callout">
+<p><strong>跨课底座</strong>：</p>
+<ul>
+<li><strong>L06</strong>：CompletableFuture 必须配自定义 Executor，否则掉进 commonPool 陷阱——编排是"上层骨架"，线程池是"下层引擎"。</li>
+<li><strong>L14（AQS/CAS）</strong>：CompletableFuture 内部把待触发的回调串成 <strong>Completion 链表（Treiber 栈）</strong>，用 <strong>CAS</strong> 无锁压栈/触发；commonPool 即 ForkJoinPool 的 work-stealing 队列也是 CAS 驱动。</li>
+<li><strong>L17（JMM）</strong>：回调能读到任务结果，靠的是 <strong>result 字段 volatile 写 happens-before 回调中的读</strong>——任务完成 hb 回调执行，跨线程可见性由此保证。</li>
+<li><strong>L07（ThreadLocal）</strong>：异步切线程后 ThreadLocal 失效，引出 TransmittableThreadLocal 与上下文透传。</li>
+</ul>
+</div>
+
+<h2 id="interview">面试话术（项目锚定）</h2>
+
+<blockquote>
+<p><strong>Q：你怎么把多个 RPC/DB 调用并行化？</strong></p>
+<p>"早期我们是串行 <code>future.get()</code>，三个分片查询要等三次，总耗时是累加。我重构成 CompletableFuture：每个分片 <code>supplyAsync</code> 提交到<strong>自定义线程池</strong>同时跑，用 <code>allOf</code> 等全部完成，再在回调里逐个 join 聚合，总耗时从三段之和降到最慢一段。在 clickhouse-mcp-server 里这就是 MCP 工具内部的并行扇出优化。"</p>
+</blockquote>
+
+<blockquote>
+<p><strong>Q：thenApply 和 thenCompose 区别？</strong></p>
+<p>"对应 map 和 flatMap。thenApply 接受 <code>T-&gt;U</code> 做纯同步变换；当下一步本身返回 <code>CompletableFuture</code> 时，用 thenApply 会得到嵌套的 <code>CF&lt;CF&lt;U&gt;&gt;</code>，必须用 thenCompose 平铺成 <code>CF&lt;U&gt;</code>。判断标准就一句：<strong>下一步是不是又一个异步调用</strong>，是就 thenCompose。"</p>
+</blockquote>
+
+<blockquote>
+<p><strong>Q：回调到底在哪个线程跑？</strong></p>
+<p>"分三种：无 Async 后缀沿用上游完成线程，但上游若已完成则在调用线程同步执行——这是个坑，可能阻塞调用方；带 Async 不传 executor 跑在 commonPool；带 Async 传 executor 跑在指定池。生产里我统一用 <code>xxxAsync(fn, 自定义池)</code>，避免 IO 任务掉进 commonPool——它默认并行度只有 CPU-1，且全 JVM 共享，IO 阻塞会连锁卡死。"</p>
+</blockquote>
+
+<blockquote>
+<p><strong>Q：异步任务抛异常怎么传播？</strong></p>
+<p>"异常沿链短路：某步抛异常后续 then 全跳过，传到第一个 exceptionally 或 handle。我用 exceptionally 做仅异常路径的兜底降级，用 handle 做正常异常都收口的二合一，用 whenComplete 做只观察不改结果的埋点和资源释放。再叠 orTimeout 做单任务超时，失败分片收进并发集合后做有限重试——这套就是 batch-import-optimizer 可控批量导入的容错骨架。"</p>
+</blockquote>
+
+<blockquote>
+<p><strong>Q（追问底层）：CompletableFuture 完成后怎么触发那么多回调的？</strong></p>
+<p>"它内部把每个等待回调封装成 Completion 节点，串成一个 Treiber 栈（无锁链表），注册回调时用 CAS 压栈。任务完成时 CAS 写入 volatile 的 result 字段，然后弹栈依次触发。CAS 接 L14 的无锁机制，volatile result 的写 happens-before 回调读接 L17,保证跨线程可见;而 commonPool 即 ForkJoinPool 的 work-stealing 也是 CAS 驱动的。"</p>
+</blockquote>
+
+<h2 id="quiz">章末 Quiz</h2>
+<div id="scorebar">得分：<span id="score">0</span> / 7</div>
+<div id="banner">🎉 全部答对！CompletableFuture 的编排、线程归属、异常与超时已经从"会用"升级为"会讲底层"。去做课后行动锁死它。</div>
+
+<div class="quiz" data-q="q1">
+  <h3>Q1. <code>queryUser(id)</code> 返回 <code>CF&lt;User&gt;</code>，<code>queryOrders(user)</code> 返回 <code>CF&lt;List&lt;Order&gt;&gt;</code>。要由 user 串接 orders，且最终类型为 <code>CF&lt;List&lt;Order&gt;&gt;</code>，用哪个？</h3>
+  <span class="opt" onclick="answer('q1','A',this)">A. thenApply，因为它最常用</span>
+  <span class="opt" onclick="answer('q1','B',this)">B. thenCompose——下一步本身返回 CF，需 flatMap 平铺，否则会嵌套成 CF&lt;CF&lt;List&gt;&gt;</span>
+  <span class="opt" onclick="answer('q1','C',this)">C. thenCombine，合并两个结果</span>
+  <span class="opt" onclick="answer('q1','D',this)">D. thenAccept，消费即可</span>
+  <div class="fb"></div>
+</div>
+
+<div class="quiz" data-q="q2">
+  <h3>Q2. <code>supplyAsync(task, POOL).thenApply(f1).thenApplyAsync(f2)</code>，task 提交时尚未完成。f1、f2 各在哪个线程执行？</h3>
+  <span class="opt" onclick="answer('q2','A',this)">A. f1、f2 都在 POOL</span>
+  <span class="opt" onclick="answer('q2','B',this)">B. f1 在 POOL（沿用上游，无 Async）；f2 在 commonPool（Async 未传 executor）</span>
+  <span class="opt" onclick="answer('q2','C',this)">C. f1、f2 都在 commonPool</span>
+  <span class="opt" onclick="answer('q2','D',this)">D. 都在调用 supplyAsync 的主线程</span>
+  <div class="fb"></div>
+</div>
+
+<div class="quiz" data-q="q3">
+  <h3>Q3. 高并发下用 <code>supplyAsync(ioTask)</code>（不传 executor）跑大量 IO 阻塞任务，为什么会卡死？</h3>
+  <span class="opt" onclick="answer('q3','A',this)">A. supplyAsync 不支持 IO</span>
+  <span class="opt" onclick="answer('q3','B',this)">B. 默认走 commonPool，并行度仅 CPU-1 且全 JVM 共享，IO 阻塞耗尽线程致连锁阻塞</span>
+  <span class="opt" onclick="answer('q3','C',this)">C. supplyAsync 会自动创建无限线程导致 OOM</span>
+  <span class="opt" onclick="answer('q3','D',this)">D. IO 任务必须用 runAsync</span>
+  <div class="fb"></div>
+</div>
+
+<div class="quiz" data-q="q4">
+  <h3>Q4. 上游<strong>正常完成</strong>时，exceptionally / handle / whenComplete 三者哪些会执行？</h3>
+  <span class="opt" onclick="answer('q4','A',this)">A. 三者都执行</span>
+  <span class="opt" onclick="answer('q4','B',this)">B. 只有 exceptionally 执行</span>
+  <span class="opt" onclick="answer('q4','C',this)">C. handle 和 whenComplete 执行，exceptionally 不执行（透传正常值）</span>
+  <span class="opt" onclick="answer('q4','D',this)">D. 三者都不执行</span>
+  <div class="fb"></div>
+</div>
+
+<div class="quiz" data-q="q5">
+  <h3>Q5. <code>allOf(f1,f2,f3)</code> 返回 <code>CF&lt;Void&gt;</code>，怎么拿到三个子任务各自的结果？</h3>
+  <span class="opt" onclick="answer('q5','A',this)">A. allOf 的返回值里直接取，强转成 List</span>
+  <span class="opt" onclick="answer('q5','B',this)">B. allOf 完成后在 thenApply 里对原始 f1/f2/f3 逐个 join()（此时已完成，不阻塞）聚合</span>
+  <span class="opt" onclick="answer('q5','C',this)">C. 必须改用 anyOf</span>
+  <span class="opt" onclick="answer('q5','D',this)">D. allOf 无法获取结果，只能放弃</span>
+  <div class="fb"></div>
+</div>
+
+<div class="quiz" data-q="q6">
+  <h3>Q6. 关于 <code>cf.cancel(true)</code>，下列正确的是？</h3>
+  <span class="opt" onclick="answer('q6','A',this)">A. 会真正中断正在 supplyAsync 中运行的底层任务线程</span>
+  <span class="opt" onclick="answer('q6','B',this)">B. 只把 future 标记为异常完成，不会中断已在运行的 supplyAsync 任务，任务仍会跑完</span>
+  <span class="opt" onclick="answer('q6','C',this)">C. 会回滚已经执行的 thenApply 副作用</span>
+  <span class="opt" onclick="answer('q6','D',this)">D. cancel 不存在于 CompletableFuture</span>
+  <div class="fb"></div>
+</div>
+
+<div class="quiz" data-q="q7">
+  <h3>Q7. 回调线程能安全读到上游任务的结果，靠什么内存语义保证？（接 L17）</h3>
+  <span class="opt" onclick="answer('q7','A',this)">A. 靠 synchronized 锁住整个 future</span>
+  <span class="opt" onclick="answer('q7','B',this)">B. 内部 result 字段 volatile 写 happens-before 回调中的读——任务完成 hb 回调执行</span>
+  <span class="opt" onclick="answer('q7','C',this)">C. 靠 ThreadLocal 复制结果</span>
+  <span class="opt" onclick="answer('q7','D',this)">D. 不保证可见性，可能读到旧值</span>
+  <div class="fb"></div>
+</div>
+
+<h2 id="action">课后首要行动</h2>
+<ol>
+<li><strong>写并对比线程归属</strong>：起一段 <code>supplyAsync(...).thenApply(...).thenApplyAsync(...).thenApplyAsync(..., pool)</code>，每步打印 <code>Thread.currentThread().getName()</code>，亲眼看 commonPool 与自定义池的切换。</li>
+<li><strong>复现 commonPool 卡死</strong>：用 commonPool 提交 50 个各 sleep 2s 的"IO 任务"，观察并行度只有 CPU-1、其余排队；换成自定义 16 线程池对比吞吐。</li>
+<li><strong>给 batch-import-optimizer 落地编排</strong>：把"分批 → supplyAsync 并行插入（自定义池 + Semaphore 限流）→ allOf 聚合 → exceptionally 收集失败批次 → 重试"骨架写进项目，提交一次 commit。</li>
+<li><strong>异常三件套实验</strong>：构造正常/异常两条上游，分别接 exceptionally / handle / whenComplete，验证执行与否、能否改结果，记录到笔记。</li>
+<li><strong>埋点 ThreadLocal 失效</strong>：在 thenApplyAsync 前后读同一个 ThreadLocal（如 MDC traceId），确认切线程后丢失——为下一课 TransmittableThreadLocal 铺路。</li>
+</ol>
+
+<h2 id="source">Primary Source</h2>
+<ul>
+<li>JDK 21 API — <a href="https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/concurrent/CompletableFuture.html">CompletableFuture（官方 Javadoc，含 *Async 线程语义说明）</a></li>
+<li>JDK 21 API — <a href="https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/concurrent/ForkJoinPool.html#commonPool()">ForkJoinPool.commonPool() 并行度说明</a></li>
+<li>OpenJDK 源码 — <code>java.util.concurrent.CompletableFuture</code>（Completion 栈 + CAS 触发机制，可对照 L14 阅读）</li>
+<li>Guava Wiki — <a href="https://github.com/google/guava/wiki/ListenableFutureExplained">ListenableFutureExplained</a></li>
+<li>Project Reactor — <a href="https://projectreactor.io/docs/core/release/reference/">Reactor Core Reference（Mono / Flux 对照）</a></li>
+<li>本 Vault 前置课：<a href="0006-java-thread-pool.html">L06 线程池</a> · <a href="0014-java-locks-aqs.html">L14 锁/AQS</a> · <a href="0017-jmm-happens-before.html">L17 JMM</a> · <a href="0007-threadlocal-internals.html">L07 ThreadLocal</a></li>
+</ul>
+
+<script>
+const ANSWERS = { q1:'B', q2:'B', q3:'B', q4:'C', q5:'B', q6:'B', q7:'B' };
+const EXPLAIN = {
+  q1:'下一步 queryOrders 本身返回 CF&lt;List&gt;，用 thenApply 会包成 CF&lt;CF&lt;List&gt;&gt;；thenCompose=flatMap 平铺为 CF&lt;List&gt;。',
+  q2:'f1 无 Async 后缀，沿用上游完成线程（POOL）；f2 是 thenApplyAsync 但没传 executor，落到 commonPool。链式统一可控线程应统一 xxxAsync(fn, POOL)。',
+  q3:'不传 executor 走 commonPool，默认并行度 = CPU-1，且全 JVM 共享。IO 阻塞任务长期占线程，几个就耗尽公共池，导致所有依赖 commonPool 的任务连锁阻塞。',
+  q4:'exceptionally 仅异常路径执行，正常完成时透传原值不执行；handle 与 whenComplete 正常异常都执行（Throwable 为 null），区别是 whenComplete 不能改结果。',
+  q5:'allOf 返回 CF&lt;Void&gt; 不带子结果。正确范式：allOf 完成后在 thenApply 里对原始 future 列表逐个 join，此时它们都已完成，join 不阻塞。',
+  q6:'cancel 只把 future 标记为异常完成（CancellationException），不会真正中断已在 supplyAsync 中运行的底层任务，任务仍跑完。要可中断需自己管理线程/中断。',
+  q7:'内部 result 字段是 volatile，任务线程写 result happens-before 回调线程读 result——任务完成 hb 回调执行，跨线程可见性由 JMM 保证（接 L17）。'
+};
+const answered = {};
+function answer(qid, choice, el) {
+  if (answered[qid]) return;
+  answered[qid] = true;
+  const box = document.querySelector('[data-q="'+qid+'"]');
+  const fb = box.querySelector('.fb');
+  const correct = ANSWERS[qid];
+  if (choice === correct) {
+    el.classList.add('correct');
+    fb.innerHTML = '✅ 正确！' + EXPLAIN[qid];
+  } else {
+    el.classList.add('wrong');
+    box.querySelectorAll('.opt').forEach(o => {
+      if (o.getAttribute('onclick').includes("'"+correct+"'")) o.classList.add('correct');
+    });
+    fb.innerHTML = '❌ 正确答案是 ' + correct + '。' + EXPLAIN[qid];
+  }
+  fb.classList.add('show');
+  updateTotal();
+}
+function updateTotal() {
+  let score = 0;
+  for (const q in answered) {
+    const box = document.querySelector('[data-q="'+q+'"]');
+    if (box.querySelector('.opt.correct') && !box.querySelector('.opt.wrong')) score++;
+  }
+  document.getElementById('score').textContent = score;
+  if (score === 7) document.getElementById('banner').style.display = 'block';
+}
+</script>
+
+</body>
+</html>
