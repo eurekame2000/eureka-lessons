@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 17 — Java 内存模型（JMM）：happens-before、volatile 底层与指令重排</title>
+<style>
+  :root {
+    --ink: #1a1a1a;
+    --muted: #555;
+    --accent: #1a6b3c;
+    --accent2: #2563eb;
+    --accent3: #7c3aed;
+    --bg: #fafaf8;
+    --card: #ffffff;
+    --border: #e0ddd8;
+    --code-bg: #f4f1eb;
+    --warn: #fff3cd;
+    --warn-border: #ffc107;
+    --success: #d4edda;
+    --success-border: #28a745;
+    --danger: #f8d7da;
+    --danger-border: #dc3545;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Georgia', 'Times New Roman', serif;
+    font-size: 17px;
+    line-height: 1.75;
+    color: var(--ink);
+    background: var(--bg);
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 48px 24px 80px;
+  }
+  h1 { font-size: 2rem; font-weight: 700; margin-bottom: 0.3em; }
+  h2 { font-size: 1.35rem; font-weight: 700; margin: 2.2em 0 0.7em; border-bottom: 2px solid var(--border); padding-bottom: 0.3em; }
+  h3 { font-size: 1.1rem; font-weight: 700; margin: 1.6em 0 0.5em; }
+  p, li { margin-bottom: 0.8em; }
+  ul, ol { margin: 0.5em 0 1em 1.5em; }
+  li { margin-bottom: 0.3em; }
+  a { color: var(--accent2); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .meta { color: var(--muted); font-family: monospace; font-size: 0.85rem; margin-bottom: 2em; }
+  .nav { font-family: monospace; font-size: 0.8rem; margin-bottom: 2.5em; color: var(--muted); }
+  .nav a { color: var(--accent2); }
+
+  .sidebar { position: fixed; top: 48px; left: calc(50% - 620px); width: 200px; font-family: monospace; font-size: 0.78rem; line-height: 1.9; }
+  .sidebar a { color: var(--muted); display: block; }
+  .sidebar a:hover { color: var(--accent2); }
+  @media (max-width: 1100px) { .sidebar { display: none; } }
+
+  code {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.88em;
+    background: var(--code-bg);
+    padding: 2px 5px;
+    border-radius: 3px;
+  }
+  pre {
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 16px 20px;
+    border-radius: 6px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.82rem;
+    line-height: 1.6;
+    overflow-x: auto;
+    margin: 1em 0;
+  }
+  pre code { background: transparent; padding: 0; color: inherit; }
+  .cmt { color: #7e8aa0; }
+  .kw { color: #7dd3fc; }
+  .str { color: #86efac; }
+  .num { color: #fca5a5; }
+
+  blockquote {
+    border-left: 4px solid var(--accent2);
+    background: #f0f7ff;
+    padding: 12px 20px;
+    margin: 1.2em 0;
+    border-radius: 0 6px 6px 0;
+  }
+
+  .callout {
+    border-left: 4px solid var(--accent);
+    background: #e8f5e9;
+    padding: 12px 20px;
+    margin: 1.2em 0;
+    border-radius: 0 6px 6px 0;
+  }
+  .callout.warn { border-left-color: var(--warn-border); background: var(--warn); }
+  .callout.danger { border-left-color: var(--danger-border); background: var(--danger); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin: 1em 0; }
+  th { background: #f1f5f9; padding: 8px 12px; text-align: left; border: 1px solid #e2e8f0; font-weight: 600; }
+  td { padding: 8px 12px; border: 1px solid #e2e8f0; vertical-align: top; }
+  tr:nth-child(even) td { background: #fafaf8; }
+
+  .flow { font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; line-height: 2; background: var(--code-bg); padding: 12px 18px; border-radius: 6px; }
+  .flow .arrow { color: var(--muted); }
+
+  .quiz { background: var(--card); border: 2px solid var(--border); border-radius: 8px; padding: 20px 24px; margin: 1.4em 0; }
+  .quiz h3 { margin-top: 0; border: none; }
+  .quiz .opt { display: block; cursor: pointer; padding: 6px 10px; margin: 4px 0; border: 1px solid var(--border); border-radius: 5px; transition: background 0.15s; }
+  .quiz .opt:hover { background: #f1f5f9; }
+  .quiz .opt.correct { background: var(--success); border-color: var(--success-border); }
+  .quiz .opt.wrong { background: var(--danger); border-color: var(--danger-border); }
+  .quiz .fb { margin-top: 8px; font-size: 0.88rem; display: none; }
+  .quiz .fb.show { display: block; }
+  #scorebar { position: sticky; top: 0; background: var(--card); border: 2px solid var(--accent); border-radius: 8px; padding: 10px 16px; font-family: monospace; z-index: 10; margin: 1em 0; }
+  #banner { display: none; background: var(--success); border: 2px solid var(--success-border); border-radius: 8px; padding: 16px; text-align: center; font-weight: 700; margin: 1em 0; }
+
+  .check { background: #fffdf5; border: 1px dashed var(--warn-border); border-radius: 6px; padding: 12px 18px; margin: 1.2em 0; }
+  details summary { cursor: pointer; color: var(--accent2); }
+
+  @media print { body { font-size: 12px; padding: 12px; max-width: 100%; } pre { font-size: 9px; } .sidebar { display: none; } }
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <strong>本课导航</strong>
+  <a href="#connect">▸ 开篇连接</a>
+  <a href="#pre">▸ 前置检查</a>
+  <a href="#s1">1. 为什么需要 JMM</a>
+  <a href="#s2">2. 指令重排三层</a>
+  <a href="#s3">3. happens-before 规则</a>
+  <a href="#s4">4. volatile 底层屏障</a>
+  <a href="#s5">5. volatile 不保证原子性</a>
+  <a href="#s6">6. DCL 经典案例</a>
+  <a href="#s7">7. final 字段语义</a>
+  <a href="#s8">8. 回贴 AQS / CHM</a>
+  <a href="#interview">▸ 面试话术</a>
+  <a href="#quiz">▸ 章末 Quiz</a>
+  <a href="#action">▸ 课后行动</a>
+  <a href="#source">▸ Primary Source</a>
+</div>
+
+<div class="nav">
+  <a href="../lesson-index.html">← 课程目录</a> ·
+  <a href="0014-java-locks-aqs.html">L14 锁/AQS</a> ·
+  <a href="0016-concurrenthashmap-source.html">L16 ConcurrentHashMap</a> ·
+  <a href="0015-go-sync-package.html">L15 Go sync</a>
+</div>
+
+<h1>Java 内存模型（JMM）</h1>
+<p style="font-size: 1.1rem; color: var(--muted); margin-bottom: 0.5em;">happens-before · volatile 内存屏障 · 指令重排 · DCL · final 安全发布</p>
+<div class="meta">Lesson 17 · 2026-06-21 · ⏱ 45 min · 进阶</div>
+
+<h2 id="connect">开篇连接</h2>
+<blockquote>
+<p>前两课你已经在用 volatile：<strong>L14 里 AQS 的 <code>state</code> 是 volatile</strong>，<strong>L16 里 ConcurrentHashMap 的 <code>table</code> 是 volatile</strong>——但当时我们只说"它保证可见性"，没讲为什么、靠什么落地。这一课就是补上那块理论底座：<strong>JMM 与 happens-before</strong>。学完你能在高级面试里把"volatile 能保证原子性吗 / happens-before 有哪些规则 / DCL 为什么要 volatile"从<strong>背诵升级为现场推导</strong>，并在 <code>clickhouse-mcp-server</code> 多线程处理请求时，用 happens-before 论证哪些状态字段需要 volatile、哪些靠 synchronized 边界安全发布。</p>
+</blockquote>
+
+<h2 id="pre">前置检查</h2>
+
+<div class="check">
+  <p><strong>前置 1</strong>（来自 L14 / L16）：volatile 此前在哪两节课出现过、分别修饰了什么字段、起什么作用？</p>
+  <details><summary>查看答案</summary>
+  <p><strong>L14</strong>：AQS 的同步状态 <code>state</code> 是 <code>volatile int</code>——多个线程通过 CAS 抢锁，必须保证一个线程改了 state 其他线程立刻看到，否则会基于脏值 CAS。<strong>L16</strong>：ConcurrentHashMap 的 <code>table</code> 引用是 volatile，且桶元素读写走 <code>tabAt</code>（Unsafe 的 volatile 语义读），保证 get 无锁也能看到最新桶头与扩容标记。两处的共同诉求都是<strong>可见性</strong>——而可见性的理论根据，就是本课要讲的 happens-before。</p>
+  </details>
+</div>
+
+<div class="check">
+  <p><strong>前置 2</strong>（来自 L14）：CAS 三个参数是什么？为什么 CAS 的目标变量通常要配 volatile？</p>
+  <details><summary>查看答案</summary>
+  <p>三参数：<strong>内存位置 V、预期旧值 A、新值 B</strong>，当且仅当 V==A 时原子地写入 B。CAS 只保证"比较并交换"这一步原子，<strong>不保证可见性</strong>；volatile 负责让别的线程看到最新值，避免基于过期值做 CAS。本课会用 happens-before 严格解释这件事。</p>
+  </details>
+</div>
+
+<div class="check">
+  <p><strong>前置 3</strong>：并发的三大问题是<strong>原子性 / 可见性 / 有序性</strong>，各指什么？本课主攻哪两个？</p>
+  <details><summary>查看答案</summary>
+  <p><strong>原子性</strong>：一组操作不可分割（<code>i++</code> 其实是读-改-写三步，非原子）。<strong>可见性</strong>：一个线程的写，另一个线程能否、何时看到。<strong>有序性</strong>：代码书写顺序与实际执行顺序是否一致（重排序会打乱）。volatile 主攻<strong>可见性 + 有序性</strong>，不解决原子性——这是本课的核心张力。</p>
+  </details>
+</div>
+
+<h2 id="s1">1. 为什么需要 JMM：硬件根源</h2>
+
+<p>JMM（Java Memory Model）不是"JVM 内存结构"（堆/栈/方法区那套），而是一套<strong>抽象规范</strong>：它定义"一个线程的写，在什么条件下对另一个线程可见"。为什么需要这层抽象？因为<strong>现代 CPU 为了性能，撒了三个谎</strong>。</p>
+
+<h3>谎言一：缓存让"主存"形同虚设（可见性问题）</h3>
+<p>CPU 不会每次都直连主存——中间隔着 L1/L2/L3 多级缓存，还有<strong>store buffer</strong>（写缓冲）。线程 A 在 Core 0 上把 <code>flag = true</code> 写进自己的 store buffer，还没刷回主存；线程 B 在 Core 1 上读到的还是缓存里的旧 <code>false</code>。缓存一致性协议（MESI）<em>最终</em>会同步，但"最终"可能是几十纳秒后，甚至在某些等待条件下"永远不主动刷"。</p>
+
+<div class="callout warn">
+<p><strong>经典死循环 bug</strong>：</p>
+<pre><code><span class="kw">boolean</span> running = <span class="kw">true</span>;            <span class="cmt">// 没加 volatile</span>
+<span class="cmt">// 线程 A（工作线程）</span>
+<span class="kw">while</span> (running) { doWork(); }      <span class="cmt">// 可能永远跑下去</span>
+<span class="cmt">// 线程 B（主线程）</span>
+running = <span class="kw">false</span>;                   <span class="cmt">// A 可能永远看不到</span></code></pre>
+<p>JIT 甚至会把 <code>running</code> 提到寄存器里，<code>while</code> 变成 <code>while(true)</code>。这就是 <strong>batch-import-optimizer 里"停止标志位"的经典场景</strong>——必须 <code>volatile boolean running</code>。</p>
+</div>
+
+<h3>谎言二：指令乱序执行（有序性问题）</h3>
+<p>CPU 流水线、编译器优化会重排指令；只要在<strong>单线程内看结果一致</strong>（as-if-serial）就允许重排。单线程无感，但多线程下，另一个线程会观察到"半成品"的中间状态。</p>
+
+<h3>谎言三：复合操作不是原子的（原子性问题）</h3>
+<p><code>i++</code> = load i → i+1 → store i，三步之间可能被打断。这个问题 volatile <strong>解决不了</strong>，要靠锁或 CAS（见第 5 节）。</p>
+
+<blockquote>
+<p>一句话总结：<strong>JMM 是程序员和 JVM/CPU 之间的"契约"</strong>——你按 happens-before 规则写代码，JVM 保证你看到的结果符合直觉；你不按规则写，JVM 就放开手脚优化，出现可见性/有序性 bug 不怪它。</p>
+</blockquote>
+
+<div class="quiz" data-q="q1">
+  <h3>检验 1. 上面 <code>running</code> 死循环的根本原因是？</h3>
+  <span class="opt" onclick="answer('q1','A',this)">A. running 是 boolean，类型太小放不下</span>
+  <span class="opt" onclick="answer('q1','B',this)">B. 工作线程把 running 缓存在本地（缓存/寄存器），看不到主线程的写——可见性问题</span>
+  <span class="opt" onclick="answer('q1','C',this)">C. running 没初始化</span>
+  <span class="opt" onclick="answer('q1','D',this)">D. while 循环本身有 bug</span>
+  <div class="fb"></div>
+</div>
+
+<h2 id="s2">2. 指令重排的三个层级 & as-if-serial</h2>
+
+<p>"重排序"不是一个东西，而是<strong>三层叠加</strong>：</p>
+
+<table>
+<tr><th>层级</th><th>谁干的</th><th>例子</th></tr>
+<tr><td>编译器重排</td><td>javac / JIT</td><td>调整无依赖语句顺序、把变量提到寄存器</td></tr>
+<tr><td>CPU 乱序执行</td><td>处理器流水线</td><td>指令级并行，谁的操作数先就绪先执行</td></tr>
+<tr><td>内存系统重排</td><td>store buffer / 失效队列</td><td>写先进 store buffer，对别的 core "延迟可见"，造成 StoreLoad 乱序</td></tr>
+</table>
+
+<div class="callout">
+<p><strong>as-if-serial（似乎串行）语义</strong>：不管怎么重排，<strong>单线程</strong>程序的执行结果不能被改变。有数据依赖的操作不会重排（<code>a=1; b=a+1;</code> 不会换序），没依赖的才可能。</p>
+</div>
+
+<div class="callout danger">
+<p><strong>关键：as-if-serial 只在单线程内成立，多线程下"失效"。</strong> 因为它只保证<em>本线程</em>看自己的结果一致，不保证<em>别的线程</em>看到的顺序。经典示例：</p>
+<pre><code><span class="cmt">// 初始 a=0, b=0；线程1 执行左侧，线程2 执行右侧</span>
+线程1: a = <span class="num">1</span>;   x = b;
+线程2: b = <span class="num">1</span>;   y = a;
+<span class="cmt">// 直觉上 x、y 不可能同时为 0</span>
+<span class="cmt">// 但 store buffer 重排后，x==0 && y==0 真的会发生</span></code></pre>
+</div>
+
+<p>那程序员怎么在需要的时候<strong>关掉重排</strong>、建立跨线程的顺序保证？答案不是"逐条禁止重排"——而是用 JMM 给的高层规则：<strong>happens-before</strong>。</p>
+
+<div class="quiz" data-q="q2">
+  <h3>检验 2. as-if-serial 语义保证的是？</h3>
+  <span class="opt" onclick="answer('q2','A',this)">A. 多线程下所有操作顺序一致</span>
+  <span class="opt" onclick="answer('q2','B',this)">B. 单线程内重排不改变本线程执行结果，但不约束跨线程可见顺序</span>
+  <span class="opt" onclick="answer('q2','C',this)">C. 禁止一切重排序</span>
+  <span class="opt" onclick="answer('q2','D',this)">D. 只对 volatile 变量生效</span>
+  <div class="fb"></div>
+</div>
+
+<h2 id="s3">3. happens-before：JMM 的核心契约</h2>
+
+<p><strong>happens-before（先行发生，记作 hb）</strong>不是"时间上先发生"，而是一个<strong>可见性 + 有序性的保证</strong>：如果操作 A hb 操作 B，那么 <strong>A 的结果对 B 可见，且 A 在 B 之前（在 B 看来）发生</strong>。注意——只要<em>结果</em>符合 hb 约束，JVM 仍可自由重排没被约束的部分。</p>
+
+<h3>八条规则（重点掌握加粗的 4 条）</h3>
+<table>
+<tr><th>#</th><th>规则</th><th>含义</th></tr>
+<tr><td>1</td><td><strong>程序顺序规则</strong></td><td>同一线程内，前面的操作 hb 后面的操作（仅本线程视角）</td></tr>
+<tr><td>2</td><td><strong>监视器锁规则</strong></td><td>一个锁的 unlock hb 后续对<em>同一个锁</em>的 lock</td></tr>
+<tr><td>3</td><td><strong>volatile 规则</strong></td><td>对 volatile 变量的写 hb 后续对<em>同一变量</em>的读</td></tr>
+<tr><td>4</td><td><strong>传递性</strong></td><td>A hb B 且 B hb C，则 A hb C（推导链的关键）</td></tr>
+<tr><td>5</td><td>线程启动规则</td><td><code>Thread.start()</code> hb 该线程内的任何操作</td></tr>
+<tr><td>6</td><td>线程终止规则</td><td>线程内所有操作 hb 其他线程从该线程 <code>join()</code> 返回</td></tr>
+<tr><td>7</td><td>线程中断规则</td><td><code>interrupt()</code> hb 被中断线程检测到中断</td></tr>
+<tr><td>8</td><td>对象终结规则</td><td>构造函数结束 hb <code>finalize()</code> 开始</td></tr>
+</table>
+
+<div class="callout">
+<p><strong>会用规则做推导，比背规则重要 10 倍。</strong> 看这个例子怎么靠传递性建立可见性：</p>
+<pre><code><span class="kw">int</span> data = <span class="num">0</span>;
+<span class="kw">volatile boolean</span> ready = <span class="kw">false</span>;
+
+<span class="cmt">// 线程 A（生产者）</span>
+data = <span class="num">42</span>;          <span class="cmt">// (1)</span>
+ready = <span class="kw">true</span>;       <span class="cmt">// (2) volatile 写</span>
+
+<span class="cmt">// 线程 B（消费者）</span>
+<span class="kw">if</span> (ready) {        <span class="cmt">// (3) volatile 读</span>
+    use(data);      <span class="cmt">// (4) 一定看到 data==42</span>
+}</code></pre>
+<p>推导链：<code>(1) hb (2)</code>（程序顺序）→ <code>(2) hb (3)</code>（volatile 写 hb 读）→ <code>(3) hb (4)</code>（程序顺序）→ <strong>由传递性 (1) hb (4)</strong>，所以 (4) 读到的 <code>data</code> 必为 42。这就是 volatile 的"<strong>搭便车</strong>"效应：它不仅让自己可见，还把它<em>之前</em>的普通写一并发布出去。</p>
+</div>
+
+<div class="callout warn">
+<p><strong>没有 hb = 数据竞争（data race）</strong>。两个线程访问同一变量、至少一个是写、且它们之间<strong>没有 hb 关系</strong> → 这就是数据竞争，结果未定义。判断并发 bug 的正确姿势：<strong>不是"凭感觉加 volatile"，而是检查关键读写之间能不能连出一条 hb 链</strong>。</p>
+</div>
+
+<div class="quiz" data-q="q3">
+  <h3>检验 3. 上例若把 <code>ready</code> 的 volatile 去掉，会怎样？</h3>
+  <span class="opt" onclick="answer('q3','A',this)">A. 完全一样，没区别</span>
+  <span class="opt" onclick="answer('q3','B',this)">B. 断了 (2)hb(3) 这一环，传递链失效——线程B可能读到 ready==true 但 data 还是 0</span>
+  <span class="opt" onclick="answer('q3','C',this)">C. 编译报错</span>
+  <span class="opt" onclick="answer('q3','D',this)">D. data 会变成原子的</span>
+  <div class="fb"></div>
+</div>
+
+<h2 id="s4">4. volatile 底层：四种内存屏障</h2>
+
+<p>volatile 的两重语义（可见性 + 禁止重排）在底层靠<strong>内存屏障（memory barrier / fence）</strong>落地。JMM 规定 JIT 在 volatile 读写前后插入屏障：</p>
+
+<table>
+<tr><th>屏障</th><th>作用</th><th>插入位置</th></tr>
+<tr><td><code>StoreStore</code></td><td>屏障前的普通写，先于 volatile 写刷出</td><td>volatile 写<strong>之前</strong></td></tr>
+<tr><td><code>StoreLoad</code></td><td>最强屏障：volatile 写 必须先于后续读完成（防写-读乱序）</td><td>volatile 写<strong>之后</strong></td></tr>
+<tr><td><code>LoadLoad</code></td><td>volatile 读 先于后续普通读</td><td>volatile 读<strong>之后</strong></td></tr>
+<tr><td><code>LoadStore</code></td><td>volatile 读 先于后续普通写</td><td>volatile 读<strong>之后</strong></td></tr>
+</table>
+
+<div class="flow">
+... 普通写 ...<br>
+<span class="arrow">┌─ StoreStore 屏障</span><br>
+<strong>volatile 写</strong><br>
+<span class="arrow">└─ StoreLoad 屏障</span>  ← 最重，刷 store buffer 到主存<br>
+&nbsp;<br>
+<strong>volatile 读</strong><br>
+<span class="arrow">┌─ LoadLoad 屏障</span><br>
+<span class="arrow">└─ LoadStore 屏障</span><br>
+... 后续读/写 ...
+</div>
+
+<p>这些抽象屏障最终<strong>映射到具体 CPU 的 fence 指令</strong>。x86 是强内存模型（TSO），只可能发生 StoreLoad 乱序，所以 volatile 写在 x86 上通常编译成一条 <code>lock addl $0,(%rsp)</code>（或 <code>mfence</code>），用 lock 前缀<strong>锁总线/缓存行 + 刷 store buffer + 让别的 core 缓存失效</strong>，同时充当全屏障；而读几乎零开销。ARM 是弱内存模型，需要更多显式 <code>dmb</code> 屏障。</p>
+
+<div class="callout">
+<p><strong>可见性怎么落地</strong>：volatile <em>写</em> → 立刻把值刷回主存（store buffer flush）；volatile <em>读</em> → 让本地缓存中该变量失效，强制从主存重新读。<strong>有序性怎么落地</strong>：屏障禁止编译器和 CPU 把屏障两侧的指令跨越屏障重排。</p>
+</div>
+
+<div class="quiz" data-q="q4">
+  <h3>检验 4. 四种屏障里最"重"、用来禁止 volatile 写与后续读乱序的是？</h3>
+  <span class="opt" onclick="answer('q4','A',this)">A. LoadLoad</span>
+  <span class="opt" onclick="answer('q4','B',this)">B. StoreStore</span>
+  <span class="opt" onclick="answer('q4','C',this)">C. StoreLoad（插在 volatile 写之后，开销最大）</span>
+  <span class="opt" onclick="answer('q4','D',this)">D. LoadStore</span>
+  <div class="fb"></div>
+</div>
+
+<h2 id="s5">5. volatile 保证什么、不保证什么</h2>
+
+<table>
+<tr><th></th><th>volatile</th><th>说明</th></tr>
+<tr><td>可见性</td><td>✅ 保证</td><td>写刷主存、读失效本地缓存</td></tr>
+<tr><td>有序性</td><td>✅ 保证</td><td>内存屏障禁止重排</td></tr>
+<tr><td>原子性</td><td>❌ 不保证</td><td>仅保证单次读/单次写原子；复合操作不原子</td></tr>
+</table>
+
+<div class="callout danger">
+<p><strong>面试必杀：volatile 能保证 <code>i++</code> 原子吗？不能。</strong> <code>i++</code> 是 read-modify-write 三步：volatile 只保证每一步的读和写各自可见，但两个线程可以<strong>同时读到 5，各自 +1，都写回 6</strong>，丢了一次自增。</p>
+<pre><code><span class="kw">volatile int</span> count = <span class="num">0</span>;
+count++;   <span class="cmt">// 仍然有竞态！两线程跑 10000 次，结果常 < 20000</span>
+
+<span class="cmt">// 正确替代（回贴 L14 的 CAS）：</span>
+AtomicInteger count = <span class="kw">new</span> AtomicInteger(<span class="num">0</span>);
+count.incrementAndGet();   <span class="cmt">// 内部 CAS 自旋，原子</span>
+<span class="cmt">// 或用锁 / synchronized 包住复合操作</span></code></pre>
+<p>记住口诀：<strong>volatile 适合"一写多读的状态标志位"，不适合"多线程累加/复合更新"</strong>。停止标志 <code>running</code> 用 volatile 完美；计数器要用 AtomicInteger 或 LongAdder。</p>
+</div>
+
+<div class="quiz" data-q="q5">
+  <h3>检验 5. 下面哪个场景<strong>适合</strong>只用 volatile（不需要额外锁/原子类）？</h3>
+  <span class="opt" onclick="answer('q5','A',this)">A. 多线程对同一计数器做 count++</span>
+  <span class="opt" onclick="answer('q5','B',this)">B. 一个线程设置 volatile boolean shutdown=true，多个工作线程读它决定是否退出</span>
+  <span class="opt" onclick="answer('q5','C',this)">C. 多线程对同一余额做 balance -= amount</span>
+  <span class="opt" onclick="answer('q5','D',this)">D. 多线程 list.add()</span>
+  <div class="fb"></div>
+</div>
+
+<h2 id="s6">6. DCL 双重检查锁：volatile 的杀手级用例</h2>
+
+<p>单例懒加载，想"加锁只在第一次、之后无锁"——这就是双重检查锁（Double-Checked Locking）。但<strong>不加 volatile 它是错的</strong>，原因正是重排序。</p>
+
+<pre><code><span class="kw">public class</span> Singleton {
+    <span class="kw">private static volatile</span> Singleton instance;   <span class="cmt">// ← 这个 volatile 必须有</span>
+
+    <span class="kw">public static</span> Singleton getInstance() {
+        <span class="kw">if</span> (instance == <span class="kw">null</span>) {                  <span class="cmt">// 第一次检查（无锁，快路径）</span>
+            <span class="kw">synchronized</span> (Singleton.class) {
+                <span class="kw">if</span> (instance == <span class="kw">null</span>) {          <span class="cmt">// 第二次检查（持锁）</span>
+                    instance = <span class="kw">new</span> Singleton();   <span class="cmt">// ← 出事的地方</span>
+                }
+            }
+        }
+        <span class="kw">return</span> instance;
+    }
+}</code></pre>
+
+<div class="callout danger">
+<p><strong>去掉 volatile 会怎样？</strong> <code>instance = new Singleton()</code> 不是原子操作，分三步：</p>
+<div class="flow">
+1. memory = allocate();    <span class="arrow">// 分配内存</span><br>
+2. ctor(memory);           <span class="arrow">// 调用构造函数初始化</span><br>
+3. instance = memory;      <span class="arrow">// instance 指向内存</span>
+</div>
+<p>JIT/CPU 可能把它重排成 <strong>1 → 3 → 2</strong>（as-if-serial 在单线程看没问题）。于是：线程 A 执行到 3（instance 已非 null）但 2 还没做完——<strong>对象处于"半初始化"状态</strong>。此时线程 B 在第一次检查发现 <code>instance != null</code>，直接 <code>return instance</code> 拿去用，<strong>访问到一个字段全是默认值的残缺对象</strong>，可能 NPE 或脏数据。</p>
+<p><strong>volatile 怎么救</strong>：它在写 instance（步骤 3）前插 StoreStore 屏障，禁止 2、3 重排，保证"对象完全构造好"hb"instance 被赋值"hb"别的线程读到非 null"。这是一条标准的 happens-before 推导链。</p>
+</div>
+
+<div class="quiz" data-q="q6">
+  <h3>检验 6. DCL 去掉 volatile 后最危险的后果是？</h3>
+  <span class="opt" onclick="answer('q6','A',this)">A. 创建出多个单例实例</span>
+  <span class="opt" onclick="answer('q6','B',this)">B. 1→3→2 重排，别的线程读到"非 null 但未初始化完"的半成品对象</span>
+  <span class="opt" onclick="answer('q6','C',this)">C. 死锁</span>
+  <span class="opt" onclick="answer('q6','D',this)">D. synchronized 失效</span>
+  <div class="fb"></div>
+</div>
+
+<h2 id="s7">7. final 字段的 JMM 保证 & synchronized 内存语义</h2>
+
+<h3>final 字段的安全发布</h3>
+<p>JMM 对 <code>final</code> 字段有一条特殊保证：<strong>只要对象正确构造（构造期 this 不逃逸），构造函数内对 final 字段的写，对任何读到该对象引用的线程都可见</strong>——无需 volatile、无需锁。原理：JMM 在<strong>构造函数返回前插一道 StoreStore 屏障</strong>，保证 final 字段的写不会重排到构造函数外面。这就是 <code>String</code>、不可变对象天生线程安全的底层依据。</p>
+
+<div class="callout danger">
+<p><strong>this 逃逸陷阱</strong>：如果构造函数还没结束就把 <code>this</code> 暴露出去（注册监听、塞进静态集合、启动引用 this 的线程），别的线程可能在 final 屏障生效<em>之前</em>拿到引用，读到 final 字段的<strong>默认值</strong>，破坏 final 保证。</p>
+<pre><code><span class="kw">public</span> Foo() {
+    <span class="kw">this</span>.x = <span class="num">42</span>;
+    registry.add(<span class="kw">this</span>);   <span class="cmt">// ❌ this 逃逸！别的线程可能看到 x==0</span>
+}</code></pre>
+</div>
+
+<h3>synchronized 的内存语义：和 volatile 统一视角</h3>
+<p>很多人只把 synchronized 当"互斥"，其实它还有<strong>内存语义</strong>，对应 happens-before 的监视器锁规则：</p>
+<ul>
+<li><strong>进入同步块（lock）</strong> ≈ volatile 读：清空本地缓存，从主存重新读共享变量。</li>
+<li><strong>退出同步块（unlock）</strong> ≈ volatile 写：把同步块内的修改刷回主存。</li>
+<li>所以 <strong>unlock hb 后续同一锁的 lock</strong>，临界区内的所有写对下一个进入临界区的线程可见。</li>
+</ul>
+
+<table>
+<tr><th></th><th>volatile</th><th>synchronized</th></tr>
+<tr><td>可见性</td><td>✅</td><td>✅</td></tr>
+<tr><td>有序性</td><td>✅</td><td>✅</td></tr>
+<tr><td>原子性</td><td>❌（单次读写除外）</td><td>✅（整个临界区）</td></tr>
+<tr><td>阻塞</td><td>无锁，不阻塞</td><td>会阻塞、可能上下文切换</td></tr>
+<tr><td>适用</td><td>状态标志、一写多读</td><td>复合操作、需要互斥</td></tr>
+</table>
+
+<p>跨语言对照（回贴 L15）：Go 没有 volatile，靠 <strong>channel 的发送 hb 接收、Mutex 的 Unlock hb 后续 Lock</strong> 建立 happens-before——思想和 Java 完全一致，都是"通过同步原语建立顺序保证"。</p>
+
+<div class="quiz" data-q="q7">
+  <h3>检验 7. 关于 final 字段的安全发布，正确的是？</h3>
+  <span class="opt" onclick="answer('q7','A',this)">A. final 字段必须再加 volatile 才能保证可见性</span>
+  <span class="opt" onclick="answer('q7','B',this)">B. 只要构造期 this 不逃逸，final 字段的初始化对读到该对象的线程天然可见（构造尾部 StoreStore 屏障）</span>
+  <span class="opt" onclick="answer('q7','C',this)">C. final 字段也保证复合操作原子性</span>
+  <span class="opt" onclick="answer('q7','D',this)">D. final 和 volatile 完全等价</span>
+  <div class="fb"></div>
+</div>
+
+<h2 id="s8">8. 回贴：用 happens-before 重新解释 AQS 与 CHM</h2>
+
+<p>现在把理论闭环贴回前两课，这正是高级面试官想听的"知其所以然"：</p>
+
+<ul>
+<li><strong>AQS 的 <code>volatile int state</code>（L14）</strong>：线程 A 释放锁 <code>setState(0)</code> 是 volatile 写，线程 B 抢锁 <code>getState()</code> 是 volatile 读 → volatile 规则建立 hb，A 在临界区内的所有修改对 B 可见。这就是"锁能保护共享数据"的<strong>内存层根据</strong>，不只是互斥。</li>
+<li><strong>CHM 的 <code>tabAt / setTabAt</code>（L16）</strong>：table 元素的读用 Unsafe 的 acquire（volatile 读语义），写用 release（volatile 写语义）→ get 无锁也能看到别的线程刚 put 的桶头、以及扩容时的 ForwardingNode 标记。L16 当时说"靠 volatile 数组元素语义"，<strong>底层就是 happens-before</strong>。</li>
+<li><strong>clickhouse-mcp-server 实战</strong>：MCP server 多线程处理请求，配置热更新字段用 <code>volatile</code>（一写多读，靠 volatile 规则发布）；连接池的取/还是复合操作，靠 <code>synchronized</code>/锁的监视器规则发布。判断标准就是：<strong>这两个操作之间能不能连出 hb 链？连不上就有数据竞争。</strong></li>
+</ul>
+
+<h2 id="interview">面试话术</h2>
+
+<blockquote>
+<p><strong>Q：volatile 能保证原子性吗？为什么？怎么解决？</strong></p>
+<p>"不能。volatile 只保证<strong>可见性</strong>和<strong>有序性</strong>，对单次读、单次写是原子的，但对 <code>i++</code> 这种 read-modify-write 复合操作无能为力——两个线程可能同时读到旧值、各自加一、写回同一个值，丢更新。底层原因是 volatile 靠内存屏障让读写跨线程可见，但屏障管不了'读到改完再写'这三步之间的原子性。要解决得用 CAS，比如 AtomicInteger 的 incrementAndGet 内部自旋 CAS，或者直接 synchronized 把复合操作包成临界区。我在项目里区分得很清楚：停止标志位这种一写多读用 volatile，计数器用 LongAdder。"</p>
+</blockquote>
+
+<blockquote>
+<p><strong>Q：happens-before 有哪些规则？和 as-if-serial 什么关系？</strong></p>
+<p>"happens-before 是 JMM 的核心契约，含义是'A hb B 则 A 的结果对 B 可见且在 B 之前发生'，但它<strong>不要求按这个顺序执行</strong>，只要结果符合就允许重排。八条规则里最常用四条：程序顺序、监视器锁（unlock hb 同锁 lock）、volatile（写 hb 读）、传递性。as-if-serial 是更底层的约束——它只保证<strong>单线程</strong>内重排不改结果，<strong>多线程下就失效了</strong>。所以 happens-before 是建在 as-if-serial 之上、专门用来跨线程建立顺序保证的高层规则。判断并发 bug 我会去连 hb 链：关键读写之间连不出 hb，就是数据竞争。"</p>
+</blockquote>
+
+<blockquote>
+<p><strong>Q：DCL 单例为什么必须 volatile？不加会怎样？</strong></p>
+<p>"因为 <code>instance = new Singleton()</code> 不是原子的，分三步：分配内存、调构造函数、把引用赋给 instance。JIT/CPU 在单线程视角下允许把它重排成'分配→赋值→构造'。不加 volatile，线程 A 重排后 instance 已经非 null 但对象还没构造完，线程 B 在第一次检查时看到非 null 直接返回，拿到一个字段全是默认值的半成品对象。volatile 通过在写 instance 前插 StoreStore 屏障禁止这个重排，保证'对象构造完成 hb instance 赋值 hb 别的线程读到非 null'。这也是为什么 JDK 里 ConcurrentHashMap 的 table、AQS 的 state 都是 volatile——本质都是用 happens-before 做安全发布。"</p>
+</blockquote>
+
+<h2 id="quiz">章末 Quiz</h2>
+<div id="scorebar">得分：<span id="score">0</span> / 12</div>
+<div id="banner">🎉 全部答对！JMM 与 happens-before 已经从"背诵"升级为"推导"，去做课后行动锁死它。</div>
+
+<div class="quiz" data-q="q8">
+  <h3>Q8. 下面代码（a、b 普通变量，flag volatile）线程2 一定能看到 a==1, b==2 吗？</h3>
+  <pre style="font-size:.78rem;"><code>线程1: a=1; b=2; flag=true;   线程2: if(flag){ read a; read b; }</code></pre>
+  <span class="opt" onclick="answer('q8','A',this)">A. 不一定，普通变量没保证</span>
+  <span class="opt" onclick="answer('q8','B',this)">B. 一定能：a、b 的写在 volatile 写之前，靠"程序顺序 + volatile + 传递性"hb 到线程2的读</span>
+  <span class="opt" onclick="answer('q8','C',this)">C. 只能看到 a，看不到 b</span>
+  <span class="opt" onclick="answer('q8','D',this)">D. 取决于 CPU 型号</span>
+  <div class="fb"></div>
+</div>
+
+<div class="quiz" data-q="q9">
+  <h3>Q9. volatile 写之后插入的最强屏障 StoreLoad，作用是？</h3>
+  <span class="opt" onclick="answer('q9','A',this)">A. 防止后续普通写重排到 volatile 写之前</span>
+  <span class="opt" onclick="answer('q9','B',this)">B. 确保 volatile 写刷出（store buffer flush），且不被后续的读越过——防写-读乱序</span>
+  <span class="opt" onclick="answer('q9','C',this)">C. 让 volatile 变量变成原子自增</span>
+  <span class="opt" onclick="answer('q9','D',this)">D. 释放锁</span>
+  <div class="fb"></div>
+</div>
+
+<div class="quiz" data-q="q10">
+  <h3>Q10. 线程 A 内：x=1; t.start();（t 内部读 x）。x 对 t 可见吗？</h3>
+  <span class="opt" onclick="answer('q10','A',this)">A. 不可见，x 不是 volatile</span>
+  <span class="opt" onclick="answer('q10','B',this)">B. 可见：线程启动规则——start() 之前的操作 hb 新线程内的任何操作</span>
+  <span class="opt" onclick="answer('q10','C',this)">C. 只有 x 是 volatile 才可见</span>
+  <span class="opt" onclick="answer('q10','D',this)">D. 需要 join 才可见</span>
+  <div class="fb"></div>
+</div>
+
+<div class="quiz" data-q="q11">
+  <h3>Q11. 关于 synchronized 的内存语义，正确的是？</h3>
+  <span class="opt" onclick="answer('q11','A',this)">A. 它只负责互斥，不管可见性</span>
+  <span class="opt" onclick="answer('q11','B',this)">B. unlock hb 后续同一锁的 lock；进入≈volatile读，退出≈volatile写，临界区写对下一个进入者可见</span>
+  <span class="opt" onclick="answer('q11','C',this)">C. 不同锁之间也能建立 hb</span>
+  <span class="opt" onclick="answer('q11','D',this)">D. synchronized 不保证原子性</span>
+  <div class="fb"></div>
+</div>
+
+<div class="quiz" data-q="q12">
+  <h3>Q12. Go 中如何建立跨 goroutine 的 happens-before？（回贴 L15）</h3>
+  <span class="opt" onclick="answer('q12','A',this)">A. 用 volatile 关键字</span>
+  <span class="opt" onclick="answer('q12','B',this)">B. channel 的发送 hb 对应接收、Mutex 的 Unlock hb 后续 Lock——思想与 Java 一致</span>
+  <span class="opt" onclick="answer('q12','C',this)">C. Go 没有内存模型，全靠运气</span>
+  <span class="opt" onclick="answer('q12','D',this)">D. 只能用 atomic 包</span>
+  <div class="fb"></div>
+</div>
+
+<h2 id="action">课后首要行动</h2>
+<ol>
+  <li><strong>跑出可见性死循环</strong>：写一个 <code>boolean running</code>（不加 volatile）的工作线程 + 主线程置 false 的 demo，用 <code>-server</code> 模式跑，亲眼看它停不下来；加上 volatile 再跑一次，确认立即退出。</li>
+  <li><strong>复现 i++ 丢更新</strong>：10 个线程对 <code>volatile int count</code> 各 <code>count++</code> 10000 次，统计结果远小于 100000；换成 <code>AtomicInteger</code> 再跑，确认精确。</li>
+  <li><strong>手画一条 hb 推导链</strong>：拿第 3 节的生产者-消费者例子，在纸上把 (1)hb(2)hb(3)hb(4) 四条边和用到的规则标全，再把 volatile 去掉，标出断在哪一环。</li>
+  <li><strong>回标 AQS / CHM 源码</strong>：打开 JDK 的 <code>AbstractQueuedSynchronizer</code> 找到 <code>volatile int state</code>、<code>ConcurrentHashMap</code> 找到 <code>volatile Node[] table</code> 与 <code>tabAt</code>，在注释里写下"这里靠哪条 hb 规则做安全发布"。</li>
+  <li><strong>项目落地一处 volatile</strong>：在 clickhouse-mcp-server 里给一个"配置热更新标志"或"优雅停机标志"加 volatile，并在 PR 描述里用 happens-before 一句话论证为什么够、为什么不需要锁。</li>
+</ol>
+
+<h2 id="source">Primary Source</h2>
+<ul>
+  <li><strong>JSR-133 / JLS §17</strong>：<a href="https://docs.oracle.com/javase/specs/jls/se17/html/jls-17.html" target="_blank">Java Language Specification, Chapter 17 — Threads and Locks</a>（happens-before、final 字段语义的权威定义）</li>
+  <li><strong>JSR-133 FAQ</strong>：<a href="https://www.cs.umd.edu/~pugh/java/memoryModel/jsr-133-faq.html" target="_blank">JSR-133 (Java Memory Model) FAQ — Jeremy Manson & Brian Goetz</a>（DCL、volatile、final 最清晰的官方解释）</li>
+  <li><strong>JSR-133 Cookbook</strong>：<a href="https://gee.cs.oswego.edu/dl/jmm/cookbook.html" target="_blank">The JMM Cookbook for Compiler Writers — Doug Lea</a>（四种内存屏障 → CPU 指令的映射表，本课第 4 节出处）</li>
+  <li><strong>《Java 并发编程实战》</strong>：Brian Goetz，第 3 章可见性、第 16 章 Java 内存模型。</li>
+  <li><strong>Go Memory Model</strong>：<a href="https://go.dev/ref/mem" target="_blank">The Go Memory Model</a>（跨语言对照，回贴 L15）</li>
+  <li><strong>关联课程</strong>：<a href="0014-java-locks-aqs.html">L14 CAS/AQS state</a> · <a href="0016-concurrenthashmap-source.html">L16 CHM table/tabAt</a> · <a href="0015-go-sync-package.html">L15 Go sync</a> · <a href="0003-jvm-gc-deep-dive.html">L03 对象创建</a></li>
+</ul>
+
+<blockquote>
+  <p><strong>有问题？</strong> 需要我画一张 store buffer / MESI 缓存一致性的时序图、展开 x86 lock 前缀指令的细节、或对比 JSR-133 之前旧内存模型为什么 DCL 不可救？</p>
+</blockquote>
+
+<script>
+const ANSWERS = { q1:'B', q2:'B', q3:'B', q4:'C', q5:'B', q6:'B', q7:'B', q8:'B', q9:'B', q10:'B', q11:'B', q12:'B' };
+const EXPLAIN = {
+  q1:'工作线程把 running 缓存在本地缓存甚至 JIT 提到寄存器，看不到主线程的写——典型可见性问题，volatile 可解。',
+  q2:'as-if-serial 只保证单线程内重排不改本线程结果，完全不约束跨线程可见的顺序，所以多线程下"失效"。',
+  q3:'去掉 volatile 就断了 (2)hb(3) 这条 volatile 边，传递链断裂，线程B可能看到 ready==true 但 data 还是旧的 0。',
+  q4:'StoreLoad 是四种里最重的，插在 volatile 写之后，刷 store buffer 并禁止写-读乱序，x86 上常是 lock 前缀/mfence。',
+  q5:'一写多读的状态标志位是 volatile 的理想场景；count++、balance-=、list.add 都是复合操作，volatile 救不了，需要 CAS/锁。',
+  q6:'new 分三步可能重排成 1→3→2，instance 先非 null 但对象未构造完，别的线程拿到半成品对象，这是最危险后果（不是多实例）。',
+  q7:'只要构造期 this 不逃逸，JMM 在构造尾部插 StoreStore 屏障，final 字段初始化对读到对象引用的线程天然可见，无需 volatile。',
+  q8:'a、b 的普通写在 volatile 写 flag 之前（程序顺序），flag 写 hb flag 读（volatile 规则），再 hb 线程2的后续读——传递性保证 a、b 都可见。',
+  q9:'StoreLoad 确保 volatile 写刷出 store buffer，且不被后续读越过，防止最难的写-读乱序，是开销最大的屏障。',
+  q10:'线程启动规则：Thread.start() 之前的所有操作 hb 新线程内的任何操作，所以 x=1 对 t 可见，无需 volatile。',
+  q11:'synchronized 有内存语义：进入≈volatile读、退出≈volatile写，unlock hb 后续同一锁的 lock；注意不同锁之间不建立 hb。',
+  q12:'Go 靠 channel 发送 hb 接收、Mutex Unlock hb 后续 Lock 建立 happens-before，与 Java 用同步原语建立顺序保证思想一致。'
+};
+const answered = {};
+function answer(qid, choice, el) {
+  if (answered[qid]) return;
+  answered[qid] = true;
+  const box = document.querySelector('[data-q="'+qid+'"]');
+  const fb = box.querySelector('.fb');
+  const correct = ANSWERS[qid];
+  if (choice === correct) {
+    el.classList.add('correct');
+    fb.innerHTML = '✅ 正确！' + EXPLAIN[qid];
+  } else {
+    el.classList.add('wrong');
+    box.querySelectorAll('.opt').forEach(o => {
+      if (o.getAttribute('onclick').includes("'"+correct+"'")) o.classList.add('correct');
+    });
+    fb.innerHTML = '❌ 正确答案是 ' + correct + '。' + EXPLAIN[qid];
+  }
+  fb.classList.add('show');
+  updateTotal();
+}
+function updateTotal() {
+  let score = 0;
+  for (const q in answered) {
+    const box = document.querySelector('[data-q="'+q+'"]');
+    if (box.querySelector('.opt.correct') && !box.querySelector('.opt.wrong')) score++;
+  }
+  document.getElementById('score').textContent = score;
+  if (score === 12) document.getElementById('banner').style.display = 'block';
+}
+</script>
+
+</body>
+</html>
