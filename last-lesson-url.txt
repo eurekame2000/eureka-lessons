@@ -1,1 +1,1 @@
-https://eurekame2000.github.io/eureka-lessons/lessons/0018-completablefuture.html
+https://eurekame2000.github.io/eureka-lessons/lessons/0020-batch-import-optimizer.html

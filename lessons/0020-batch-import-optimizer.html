@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 20 — batch-import-optimizer 受控并发批量导入库实战</title>
+<style>
+  :root {
+    --ink: #1a1a1a;
+    --muted: #555;
+    --accent: #1a6b3c;
+    --accent2: #2563eb;
+    --bg: #fafaf8;
+    --card: #ffffff;
+    --border: #e0ddd8;
+    --code-bg: #f4f1eb;
+    --warn: #fff3cd;
+    --warn-border: #ffc107;
+    --success: #d4edda;
+    --success-border: #28a745;
+    --danger: #f8d7da;
+    --danger-border: #dc3545;
+    --info: #d1ecf1;
+    --info-border: #17a2b8;
+    --dark-code: #0f172a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Georgia', 'Times New Roman', serif;
+    font-size: 17px;
+    line-height: 1.75;
+    color: var(--ink);
+    background: var(--bg);
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 48px 24px 80px;
+  }
+  h1 { font-size: 2rem; font-weight: 700; margin-bottom: 0.3em; }
+  h2 { font-size: 1.35rem; font-weight: 700; margin: 2.2em 0 0.7em; border-bottom: 2px solid var(--border); padding-bottom: 0.3em; color: var(--accent); }
+  h3 { font-size: 1.1rem; font-weight: 700; margin: 1.6em 0 0.5em; }
+  p { margin-bottom: 1em; }
+  ul, ol { margin: 0.5em 0 1em 1.5em; }
+  li { margin-bottom: 0.3em; }
+  a { color: var(--accent2); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .meta { color: var(--muted); font-family: monospace; font-size: 0.85rem; margin-bottom: 2em; }
+  .nav { font-family: monospace; font-size: 0.8rem; margin-bottom: 2.5em; color: var(--muted); }
+  .nav a { color: var(--accent2); }
+  code {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+    font-size: 0.88em;
+    background: var(--code-bg);
+    padding: 0.15em 0.35em;
+    border-radius: 3px;
+  }
+  pre {
+    background: var(--dark-code);
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 1.2em 1.4em;
+    overflow-x: auto;
+    margin: 1em 0 1.5em;
+    line-height: 1.55;
+    color: #e2e8f0;
+  }
+  pre code { background: none; padding: 0; font-size: 0.85em; color: #e2e8f0; }
+  .cmt { color: #64748b; }
+  .kw  { color: #93c5fd; }
+  .str { color: #86efac; }
+  .box {
+    border-radius: 6px;
+    padding: 1em 1.3em;
+    margin: 1.2em 0;
+    border-left: 4px solid;
+  }
+  .warn  { background: var(--warn);    border-color: var(--warn-border); }
+  .info  { background: var(--info);    border-color: var(--info-border); }
+  .good  { background: var(--success); border-color: var(--success-border); }
+  .bad   { background: var(--danger);  border-color: var(--danger-border); }
+  table { width: 100%; border-collapse: collapse; margin: 1em 0 1.5em; font-size: 0.92em; }
+  th { background: var(--code-bg); font-weight: 700; text-align: left; padding: 0.5em 0.8em; border: 1px solid var(--border); }
+  td { padding: 0.45em 0.8em; border: 1px solid var(--border); vertical-align: top; }
+  tr:nth-child(even) td { background: #f7f6f2; }
+  .diagram {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1.2em;
+    font-family: monospace;
+    font-size: 0.82em;
+    line-height: 1.6;
+    white-space: pre;
+    overflow-x: auto;
+    margin: 1em 0 1.5em;
+  }
+  .check {
+    background: #fff;
+    border: 1px dashed var(--accent);
+    border-radius: 6px;
+    padding: 0.9em 1.2em;
+    margin: 1.2em 0;
+    font-size: 0.95em;
+  }
+  .check summary { cursor: pointer; font-weight: 700; color: var(--accent); }
+  .check[open] summary { margin-bottom: 0.6em; }
+
+  /* Quiz */
+  .quiz-section { margin-top: 2.5em; }
+  .quiz-q {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.2em 1.4em;
+    margin-bottom: 1.2em;
+  }
+  .quiz-q p { font-weight: 700; margin-bottom: 0.8em; }
+  .quiz-q label { display: block; padding: 0.45em 0.7em; border-radius: 4px; cursor: pointer; margin-bottom: 0.3em; border: 1px solid transparent; }
+  .quiz-q label:hover { background: #f0ede7; }
+  .quiz-q input[type=radio] { margin-right: 0.6em; }
+  .feedback { display: none; margin-top: 0.8em; padding: 0.7em 1em; border-radius: 5px; font-size: 0.93em; }
+  .feedback.correct { background: var(--success); border: 1px solid var(--success-border); }
+  .feedback.wrong   { background: var(--danger);  border: 1px solid var(--danger-border); }
+  .btn {
+    display: inline-block;
+    margin-top: 0.6em;
+    padding: 0.45em 1.1em;
+    background: var(--accent2);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+    font-family: sans-serif;
+  }
+  .btn:hover { background: #1a4fd0; }
+  #score-banner {
+    display: none;
+    margin-top: 2em;
+    padding: 1.2em 1.5em;
+    background: var(--success);
+    border: 2px solid var(--success-border);
+    border-radius: 8px;
+    text-align: center;
+    font-size: 1.1em;
+    font-weight: 700;
+  }
+  .tag { display: inline-block; font-size: 0.72em; font-family: monospace; background: var(--code-bg); border: 1px solid var(--border); border-radius: 3px; padding: 0.1em 0.45em; margin-left: 0.4em; vertical-align: middle; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<div class="nav">
+  <a href="lesson-index.html">≡ 课程索引</a>
+  &nbsp;|&nbsp;
+  <a href="0019-ttl-mdc-async-context.html">← L19 TTL/MDC</a>
+  &nbsp;|&nbsp;
+  前置:
+  <a href="0006-java-thread-pool.html">L06</a>
+  <a href="0014-java-locks-aqs.html">L14</a>
+  <a href="0018-completablefuture.html">L18</a>
+  <a href="0019-ttl-mdc-async-context.html">L19</a>
+</div>
+
+<h1>Lesson 20</h1>
+<h1 style="font-size:1.5rem;margin-top:0.2em;color:var(--accent)">batch-import-optimizer —— 受控并发批量导入库实战 <span class="tag">GitHub 项目</span></h1>
+<div class="meta">2026-06-26 &nbsp;|&nbsp; 难度: 进阶 &nbsp;|&nbsp; 收口 L06 / L14 / L18 / L19</div>
+
+<div class="box info">
+  <strong>本课一句话：</strong>把四课并发理论（线程池拒绝策略 + Semaphore 限流 + CompletableFuture 编排 + TTL 透传）拼装成一个真实、可发布、可写进简历的 GitHub 库。学完你拥有一个能讲 STAR 故事的并发项目。
+</div>
+
+<!-- 开篇连接 -->
+<h2>0. 开篇：这节课为什么重要</h2>
+<p>
+  MISSION 里写着「产出 ≥1 个公开 GitHub 项目」——<code>batch-import-optimizer</code> 就是这个交付物。面试官问「你做过最有挑战的并发场景」时，你不再只能背概念，而是指着一个真实仓库讲：<strong>批量 insert 把 DB 打挂 → 我用有界队列 + CallerRunsPolicy 做背压 → 吞吐稳定不再 OOM</strong>。它的核心抽象还能直接复用进 <code>clickhouse-mcp-server</code> 的多分片并行写入路径。
+</p>
+
+<!-- 前置检查 -->
+<h2>1. 前置检查（30 秒自测）</h2>
+<p>这四课是本项目的地基。先确认你没漏：</p>
+
+<details class="check">
+  <summary>Q-pre1：线程池任务提交的完整顺序是什么？（L06）</summary>
+  <p>核心线程 → 有界队列 → 创建非核心线程（到 maxPoolSize）→ 触发拒绝策略。注意顺序：<strong>队列在非核心线程之前</strong>，这是 JDK 线程池和直觉相反的关键点。</p>
+</details>
+
+<details class="check">
+  <summary>Q-pre2：为什么「无界队列 + 固定线程池」会 OOM，且永远不触发拒绝策略？（L06）</summary>
+  <p>无界队列（<code>LinkedBlockingQueue</code> 无容量参数）永远「装得下」，所以线程数永远不会扩到 maxPoolSize，拒绝策略永不触发。任务无限堆积在堆内存里 → OOM。<code>Executors.newFixedThreadPool</code> 正是这个坑。</p>
+</details>
+
+<details class="check">
+  <summary>Q-pre3：allOf 之后怎么取各子结果且不阻塞？（L18）</summary>
+  <p><code>CompletableFuture.allOf(f1, f2, f3).join()</code> 之后，所有子 future 已完成，再对每个调 <code>.join()</code> 立刻返回、不阻塞。</p>
+</details>
+
+<details class="check">
+  <summary>Q-pre4：TtlExecutors.getTtlExecutorService 解决什么问题？（L19）</summary>
+  <p>线程池复用线程，打断 ThreadLocal/MDC 继承链。包装一次 Executor，后续所有 <code>*Async</code> 提交自动在「提交时拍快照、执行时还原」，保证 traceId 不丢。</p>
+</details>
+
+<div class="box warn">
+  以上有任何一题卡壳，先回去复习对应课，再继续——本课不重讲理论，只讲<strong>怎么把它们拼起来</strong>。
+</div>
+
+<!-- 2. 项目定位与 API -->
+<h2>2. 项目定位与 API 设计</h2>
+<p>
+  <code>batch-import-optimizer</code> 是一个<strong>通用、零依赖框架</strong>的 Java 受控并发批量导入库。给它一个大集合和一个「单批写入函数」，它负责分批、限流、并发、背压、失败收集，调用方只关心业务写入逻辑。
+</p>
+
+<h3>2.1 三个核心类</h3>
+<table>
+  <tr><th>类</th><th>职责</th><th>用到的课</th></tr>
+  <tr><td><code>BatchImportConfig</code></td><td>不可变配置：批大小、并发度、下游许可数、重试次数、超时</td><td>—</td></tr>
+  <tr><td><code>BatchImportExecutor&lt;T&gt;</code></td><td>核心引擎：建有界线程池、Semaphore、分批 fan-out/fan-in、收集结果</td><td>L06+L14+L18+L19</td></tr>
+  <tr><td><code>BatchImportResult</code></td><td>结果聚合：成功批数、失败批次清单（含原始数据，供重试）</td><td>L18 handle</td></tr>
+</table>
+
+<h3>2.2 调用方视角（先看用法再看实现）</h3>
+<pre><code><span class="cmt">// 调用方只写这几行</span>
+BatchImportConfig config = BatchImportConfig.builder()
+        .batchSize(500)           <span class="cmt">// 每批 500 条</span>
+        .concurrency(8)           <span class="cmt">// 最多 8 个批次并行（线程池 maxPoolSize）</span>
+        .downstreamPermits(4)     <span class="cmt">// 下游 DB 同时最多 4 个连接（Semaphore）</span>
+        .maxRetries(2)            <span class="cmt">// 失败批次重试 2 次</span>
+        .build();
+
+BatchImportExecutor&lt;User&gt; executor = <span class="kw">new</span> BatchImportExecutor&lt;&gt;(config);
+
+BatchImportResult result = executor.importAll(
+        userList,                          <span class="cmt">// 100 万条数据</span>
+        batch -&gt; userMapper.insertBatch(batch)  <span class="cmt">// 单批写入逻辑（业务方提供）</span>
+);
+
+System.out.println(result.summary());
+<span class="cmt">// 成功 1998 批 / 失败 2 批，失败数据已在 result.failedBatches() 里</span></code></pre>
+
+<!-- 3. 受控并发核心 -->
+<h2>3. 受控并发核心：有界队列 + CallerRunsPolicy</h2>
+
+<p>
+  最关键的一行设计：<strong>绝不用 <code>Executors</code> 工厂方法</strong>，手动 new 一个带<u>有界 ArrayBlockingQueue</u>的 <code>ThreadPoolExecutor</code>，拒绝策略选 <code>CallerRunsPolicy</code>。
+</p>
+
+<pre><code><span class="kw">private</span> ThreadPoolExecutor buildPool(BatchImportConfig cfg) {
+    <span class="kw">int</span> core = cfg.getConcurrency();
+    <span class="kw">return new</span> ThreadPoolExecutor(
+            core,                                  <span class="cmt">// corePoolSize</span>
+            core,                                  <span class="cmt">// maxPoolSize（导入是 IO 密集，core==max 简化）</span>
+            60L, TimeUnit.SECONDS,
+            <span class="kw">new</span> ArrayBlockingQueue&lt;&gt;(core * 2),         <span class="cmt">// ★ 有界队列：缓冲但不无限堆积</span>
+            <span class="kw">new</span> ThreadFactoryBuilder()
+                    .setNameFormat(<span class="str">"batch-import-%d"</span>).build(),
+            <span class="kw">new</span> ThreadPoolExecutor.CallerRunsPolicy()  <span class="cmt">// ★ 背压核心</span>
+    );
+}</code></pre>
+
+<div class="diagram">
+生产者(主线程)          有界队列(cap=16)         worker线程×8
+     │                       │                      │
+     │ 提交 batch ──────────▶ [■■■■■■■■]            │ 并发执行
+     │                       │ 满了！                │
+     │ 提交 batch ──────╳───▶ [拒绝]                │
+     │                                              │
+     ▼ CallerRunsPolicy: 主线程自己跑这个 batch     │
+   主线程被「占用」执行任务 → 暂停提交 → 天然降速
+</div>
+
+<h3>3.1 为什么 CallerRunsPolicy 能形成背压</h3>
+<p>
+  当队列和线程都满，新任务被拒。<code>CallerRunsPolicy</code> 不抛异常、不丢弃，而是<strong>让提交任务的那个线程（caller，这里是主线程）自己同步执行这个任务</strong>。主线程在跑任务期间无法继续 <code>submit</code>，于是生产速度自动被「下游处理速度」拖住——这就是背压（backpressure）：快的一方被慢的一方反向限速。
+</p>
+
+<table>
+  <tr><th>拒绝策略</th><th>行为</th><th>代价</th></tr>
+  <tr><td><code>AbortPolicy</code>（默认）</td><td>抛 RejectedExecutionException</td><td>任务丢失，需调用方 catch 重试，复杂</td></tr>
+  <tr><td><code>DiscardPolicy</code></td><td>静默丢弃</td><td>数据丢失且无感知 —— 批量导入绝对禁用</td></tr>
+  <tr><td><code>DiscardOldestPolicy</code></td><td>丢队首旧任务</td><td>丢的是先提交的批次，更不可接受</td></tr>
+  <tr><td><b><code>CallerRunsPolicy</code></b></td><td>调用方线程自己执行</td><td><b>不丢数据 + 自动降速</b>；代价是主线程偶尔被占用、单批延迟上升</td></tr>
+</table>
+
+<div class="box info">
+  <strong>面试金句：</strong>「CallerRunsPolicy 用『让生产者干活』换『不丢数据 + 自动反压』。对吞吐：稳态吞吐由下游能力决定，不会被生产端冲垮；对延迟：被回退的那批由主线程串行执行，单批延迟升高，但系统整体不雪崩。」
+</div>
+
+<details class="check">
+  <summary>即时检验：core=4, max=4, 队列 cap=8，一次性提交 20 个 batch，会发生什么？</summary>
+  <p>4 个直接被 worker 执行，8 个进队列，剩下 8 个触发拒绝 → CallerRunsPolicy 让主线程逐个同步执行这 8 个。整个过程<strong>无异常、无丢失</strong>，主线程被反压住，提交节奏自动匹配消费速度。</p>
+</details>
+
+<!-- 4. Semaphore 两层限流 -->
+<h2>4. 两层限流：线程池并发 ≠ 下游并发</h2>
+<p>
+  线程池的 <code>maxPoolSize</code> 限的是「<strong>计算侧并发</strong>」——同时有几个批次在被处理。但每个批次内部可能调用 DB / 第三方接口，真正要保护的是「<strong>下游连接并发</strong>」。两者语义不同，复杂场景需要叠加。
+</p>
+
+<table>
+  <tr><th></th><th>线程池 maxPoolSize</th><th>Semaphore 许可</th></tr>
+  <tr><td>限制对象</td><td>同时运行的任务数</td><td>同时持有许可的代码段数</td></tr>
+  <tr><td>粒度</td><td>整个任务生命周期</td><td>可只包住下游调用那一小段</td></tr>
+  <tr><td>底层</td><td>线程数 + 队列</td><td>AQS 共享模式（L14）</td></tr>
+  <tr><td>典型用途</td><td>控总并发、控内存</td><td>保护 DB 连接池 / 第三方 QPS</td></tr>
+</table>
+
+<pre><code><span class="kw">private final</span> Semaphore downstreamLimit;  <span class="cmt">// = new Semaphore(cfg.getDownstreamPermits())</span>
+
+<span class="kw">private</span> BatchOutcome runBatch(List&lt;T&gt; batch, BatchWriter&lt;T&gt; writer) {
+    <span class="kw">try</span> {
+        downstreamLimit.acquire();          <span class="cmt">// ★ 进入下游前申请许可（AQS 共享锁）</span>
+        <span class="kw">try</span> {
+            writer.write(batch);            <span class="cmt">// 真正打 DB 的那一段</span>
+            <span class="kw">return</span> BatchOutcome.success(batch.size());
+        } <span class="kw">finally</span> {
+            downstreamLimit.release();      <span class="cmt">// ★ 必须 finally 释放，否则许可泄漏</span>
+        }
+    } <span class="kw">catch</span> (Exception e) {
+        <span class="kw">return</span> BatchOutcome.failure(batch, e); <span class="cmt">// 异常隔离：不抛出，转成结果</span>
+    }
+}</code></pre>
+
+<div class="box warn">
+  <strong>为什么要两层？</strong>假设线程池 8 并发，但 DB 连接池只有 4。若不加 Semaphore，8 个批次同时抢 4 个连接，4 个线程阻塞在连接获取上、白白占着线程。用 <code>Semaphore(4)</code> 包住下游调用，让多余批次在<u>申请许可时</u>等待，线程行为更可控、超时更好管理。
+</div>
+
+<!-- 5. 编排与失败收集 -->
+<h2>5. CompletableFuture 编排 + 失败收集</h2>
+<p>
+  分片 → 每片 <code>supplyAsync</code> 到自定义池 → <code>handle</code> 把异常转成结果（不让异常炸穿）→ <code>allOf</code> fan-in → 汇总。<strong>每批异常独立隔离</strong>，第 3 批失败不影响第 4 批。
+</p>
+
+<pre><code><span class="kw">public</span> BatchImportResult importAll(List&lt;T&gt; all, BatchWriter&lt;T&gt; writer) {
+    List&lt;List&lt;T&gt;&gt; batches = partition(all, config.getBatchSize());
+
+    List&lt;CompletableFuture&lt;BatchOutcome&gt;&gt; futures = batches.stream()
+        .map(batch -&gt; CompletableFuture
+            .supplyAsync(() -&gt; runBatch(batch, writer), pool)  <span class="cmt">// pool 已被 TtlExecutors 包装</span>
+            .handle((outcome, ex) -&gt; {                          <span class="cmt">// ★ handle 同时拿正常值和异常</span>
+                <span class="kw">if</span> (ex != <span class="kw">null</span>) <span class="kw">return</span> BatchOutcome.failure(batch, ex);
+                <span class="kw">return</span> outcome;
+            }))
+        .collect(Collectors.toList());
+
+    <span class="cmt">// fan-in：等全部完成（无论成败），再逐个取结果</span>
+    CompletableFuture.allOf(futures.toArray(<span class="kw">new</span> CompletableFuture[0])).join();
+
+    List&lt;BatchOutcome&gt; outcomes = futures.stream()
+            .map(CompletableFuture::join)   <span class="cmt">// allOf 后 join 不阻塞</span>
+            .collect(Collectors.toList());
+
+    <span class="kw">return</span> BatchImportResult.from(outcomes);  <span class="cmt">// 聚合成功/失败</span>
+}</code></pre>
+
+<div class="box info">
+  <strong>handle vs exceptionally：</strong>用 <code>handle</code> 而非 <code>exceptionally</code>，因为 handle 一个回调同时处理「正常结果」和「异常」，把两条路统一成 <code>BatchOutcome</code>，下游 <code>allOf</code> 永远不会因某批异常而整体失败。这是「失败隔离」的关键技巧。
+</div>
+
+<h3>5.1 失败批次选择性重试</h3>
+<pre><code>BatchImportResult result = executor.importAll(all, writer);
+<span class="kw">if</span> (result.hasFailures() &amp;&amp; config.getMaxRetries() &gt; 0) {
+    List&lt;T&gt; retryData = result.failedBatches().stream()
+            .flatMap(b -&gt; b.data().stream())
+            .collect(Collectors.toList());
+    <span class="cmt">// 只重试失败的数据，且要求 writer 幂等（按主键 upsert）</span>
+    result = executor.importAll(retryData, writer);
+}</code></pre>
+
+<div class="box warn">
+  <strong>重试前提是幂等。</strong>批量写必须用 <code>INSERT ... ON DUPLICATE KEY UPDATE</code> / upsert / 主键去重，否则重试会产生重复数据。这点写进 README 的「使用约束」。
+</div>
+
+<!-- 6. TTL 透传 -->
+<h2>6. 链路透传：让批任务日志带上 traceId</h2>
+<p>
+  批任务跑在线程池里，<code>MDC.get("traceId")</code> 会是 <code>null</code>（L19 结论）。修复只需一行——用 <code>TtlExecutors</code> 包装线程池：
+</p>
+
+<pre><code><span class="kw">import</span> com.alibaba.ttl.threadpool.TtlExecutors;
+<span class="kw">import</span> com.alibaba.ttl.TransmittableThreadLocal;
+
+<span class="cmt">// traceId 放进 TTL（而非普通 ThreadLocal）</span>
+<span class="kw">private static final</span> TransmittableThreadLocal&lt;String&gt; TRACE = <span class="kw">new</span> TransmittableThreadLocal&lt;&gt;();
+
+<span class="cmt">// 构造引擎时包装池：改这一行，所有 supplyAsync 自动透传</span>
+<span class="kw">this</span>.pool = TtlExecutors.getTtlExecutorService(buildPool(config));</code></pre>
+
+<p>
+  这样每个批次 worker 执行前会 replay 主线程的 TTL 快照，配合 MDC Transmittee，日志里每条批写入记录都带 <code>traceId</code>，排查「哪一批慢、哪一批失败」时一搜即得。
+</p>
+
+<details class="check">
+  <summary>即时检验：如果忘了包装、直接把裸 ThreadPoolExecutor 传给 supplyAsync，会怎样？</summary>
+  <p>批任务里 <code>MDC.get("traceId")</code> 返回 null（或上一个复用任务的脏值），日志无法关联到本次请求链路。修复：<code>TtlExecutors.getTtlExecutorService(pool)</code> 包一层即可，业务代码零改动。</p>
+</details>
+
+<!-- 7. 工程化 README -->
+<h2>7. README 设计思路（讲清「为什么这么选」）</h2>
+<p>
+  GitHub 项目的价值一半在 README。它要回答面试官会追问的三个「为什么」：
+</p>
+<ul>
+  <li><strong>为什么不用 <code>Executors.newFixedThreadPool</code>？</strong> 它内部是无界 <code>LinkedBlockingQueue</code>，高压下任务无限堆积 → OOM，且拒绝策略永不触发。手动 new 才能控队列容量。</li>
+  <li><strong>为什么选 <code>CallerRunsPolicy</code> 而非默认 <code>AbortPolicy</code>？</strong> 批量导入要的是「全量写完、一条不丢」，CallerRunsPolicy 提供天然背压且零数据丢失，比上层 catch-retry 简单可靠。</li>
+  <li><strong>为什么线程池之外还要 Semaphore？</strong> 区分计算并发与下游连接并发，独立保护 DB，避免线程阻塞在连接获取上。</li>
+</ul>
+
+<div class="box good">
+  <strong>README 应包含的小节：</strong>① 解决什么问题（OOM / 丢数据痛点）② 快速开始（10 行 demo）③ 配置项表格 ④ 设计决策（上面三个为什么）⑤ 基准数据（背压前后吞吐对比）⑥ 使用约束（幂等要求）。
+</div>
+
+<h3>7.1 单元测试验证背压</h3>
+<pre><code><span class="cmt">// 用 CountDownLatch + AtomicInteger 验证「同时运行的批次数」不超 concurrency</span>
+<span class="kw">@Test</span>
+<span class="kw">void</span> shouldNotExceedConcurrency() <span class="kw">throws</span> Exception {
+    <span class="kw">int</span> concurrency = 4;
+    AtomicInteger running = <span class="kw">new</span> AtomicInteger();
+    AtomicInteger maxSeen = <span class="kw">new</span> AtomicInteger();
+    BatchImportExecutor&lt;Integer&gt; ex = <span class="kw">new</span> BatchImportExecutor&lt;&gt;(
+            BatchImportConfig.builder().batchSize(1).concurrency(concurrency).build());
+
+    ex.importAll(range(0, 100), batch -&gt; {
+        <span class="kw">int</span> cur = running.incrementAndGet();
+        maxSeen.updateAndGet(m -&gt; Math.max(m, cur));
+        Thread.sleep(10);
+        running.decrementAndGet();
+    });
+
+    assertThat(maxSeen.get()).isLessThanOrEqualTo(concurrency);  <span class="cmt">// 并发被限住</span>
+}</code></pre>
+
+<!-- 8. 面试话术 -->
+<h2>8. 面试话术：STAR 项目叙事</h2>
+<div class="box warn">
+  <strong>Q：讲一个你做过的最有挑战的并发场景。</strong><br><br>
+  <strong>S（情境）：</strong>有个数据迁移任务，要把百万级用户从旧库批量导入新库。最初实现是 <code>newFixedThreadPool</code> + 来一批提交一批。<br>
+  <strong>T（任务）：</strong>压测时主库被打挂，应用还偶发 OOM——线程池无界队列把待写批次全堆在堆里。<br>
+  <strong>A（行动）：</strong>我抽了一个通用库 <code>batch-import-optimizer</code>。三件事：① 手动 new <code>ThreadPoolExecutor</code> 用<u>有界 ArrayBlockingQueue</u>，杜绝无限堆积；② 拒绝策略选 <code>CallerRunsPolicy</code>，队列满时让提交线程自己跑任务，形成<u>背压</u>，生产速度自动匹配下游；③ 再叠一层 <code>Semaphore</code> 限制对 DB 的真实并发连接数，区分计算并发与下游并发；编排上用 <code>CompletableFuture</code> 分批 fan-out/fan-in，<code>handle</code> 隔离每批异常、收集失败清单做选择性幂等重试；并用 <code>TtlExecutors</code> 包装线程池保证 traceId 在异步批任务里不断链。<br>
+  <strong>R（结果）：</strong>内存平稳不再 OOM，DB 压力可控，吞吐稳定，失败批次可定位可重试。这个库我开源在 GitHub，核心抽象还复用进了另一个 MCP server 的多分片写入。
+</div>
+
+<div class="box info">
+  <strong>追问预案：</strong>
+  <ul>
+    <li>「队列设满了怎么办？」→ 不会丢，CallerRunsPolicy 让 caller 执行，自动反压。</li>
+    <li>「为什么不用无界队列？」→ OOM 根因 + 拒绝策略永不触发。</li>
+    <li>「一批失败了怎么办？」→ handle 转结果不中断其他批 + 失败清单 + 幂等重试。</li>
+    <li>「异步日志 traceId 丢了？」→ MDC 断链 + TtlExecutors 修复（回扣 L19）。</li>
+  </ul>
+</div>
+
+<!-- QUIZ -->
+<h2 class="quiz-section">9. Quiz — 检索练习</h2>
+<p style="color:var(--muted);font-size:0.9em">每题只选一个最准确的答案。全对触发完成横幅。</p>
+
+<div class="quiz-q" id="q1">
+  <p>Q1. core=3, max=3, 有界队列 cap=5，一次提交 12 个任务，多少个会触发拒绝策略？</p>
+  <label><input type="radio" name="q1" value="a"> a) 0 个</label>
+  <label><input type="radio" name="q1" value="b"> b) 4 个（12 - 3 worker - 5 队列）</label>
+  <label><input type="radio" name="q1" value="c"> c) 9 个</label>
+  <label><input type="radio" name="q1" value="d"> d) 12 个</label>
+  <button class="btn" onclick="check('q1','b')">提交</button>
+  <div class="feedback correct" id="q1-ok">✅ 正确！3 个直接执行 + 5 个入队 = 8 个被容纳，剩 4 个触发拒绝策略（这里被 CallerRunsPolicy 接管）。</div>
+  <div class="feedback wrong"   id="q1-no">❌ 顺序：先填 worker(3)，再填队列(5)，共容纳 8 个；12 - 8 = 4 个触发拒绝。</div>
+</div>
+
+<div class="quiz-q" id="q2">
+  <p>Q2. CallerRunsPolicy 形成背压，被拒任务由哪个线程执行？对系统有什么影响？</p>
+  <label><input type="radio" name="q2" value="a"> a) 新建的临时线程执行，吞吐不变</label>
+  <label><input type="radio" name="q2" value="b"> b) 提交任务的调用方线程自己执行，使其暂停提交、自动降速</label>
+  <label><input type="radio" name="q2" value="c"> c) 队列里最老的 worker 执行，丢弃新任务</label>
+  <label><input type="radio" name="q2" value="d"> d) 交给 ForkJoinPool.commonPool 执行</label>
+  <button class="btn" onclick="check('q2','b')">提交</button>
+  <div class="feedback correct" id="q2-ok">✅ 正确！caller（通常是主线程）同步执行被拒任务，期间无法继续 submit，生产速度被下游拖住——这就是背压。</div>
+  <div class="feedback wrong"   id="q2-no">❌ 核心是「caller runs」：提交线程自己跑，占用期间停止提交，形成反压。不丢数据。</div>
+</div>
+
+<div class="quiz-q" id="q3">
+  <p>Q3. 为什么 Executors.newFixedThreadPool 在高压批量导入下会 OOM？</p>
+  <label><input type="radio" name="q3" value="a"> a) 线程数太多耗尽内存</label>
+  <label><input type="radio" name="q3" value="b"> b) 内部是无界 LinkedBlockingQueue，任务无限堆积；队列永不满，拒绝策略永不触发</label>
+  <label><input type="radio" name="q3" value="c"> c) 它不支持泛型任务</label>
+  <label><input type="radio" name="q3" value="d"> d) maxPoolSize 设得太小</label>
+  <button class="btn" onclick="check('q3','b')">提交</button>
+  <div class="feedback correct" id="q3-ok">✅ 正确！无界队列永远装得下，线程数不会扩、拒绝策略不触发，待处理任务全堆在堆里 → OOM。</div>
+  <div class="feedback wrong"   id="q3-no">❌ 根因是无界队列：任务无限入队、拒绝策略永不触发，堆积导致 OOM。所以本项目手动 new + 有界队列。</div>
+</div>
+
+<div class="quiz-q" id="q4">
+  <p>Q4. 线程池 maxPoolSize 和 Semaphore 许可都能限并发，什么场景必须同时用？</p>
+  <label><input type="radio" name="q4" value="a"> a) 任何场景都必须两者同时用</label>
+  <label><input type="radio" name="q4" value="b"> b) 当「计算并发度」可以高于「下游可承受连接数」时——线程池控总任务并发，Semaphore 单独保护下游</label>
+  <label><input type="radio" name="q4" value="c"> c) 只有单线程场景才需要</label>
+  <label><input type="radio" name="q4" value="d"> d) 二者完全等价，用任意一个即可</label>
+  <button class="btn" onclick="check('q4','b')">提交</button>
+  <div class="feedback correct" id="q4-ok">✅ 正确！maxPoolSize 限同时运行的任务，Semaphore 可只包住下游调用那一小段，独立保护 DB 连接池，语义不同。</div>
+  <div class="feedback wrong"   id="q4-no">❌ 二者语义不同：线程池限运行任务数，Semaphore 限下游调用段。当下游承受力低于计算并发时需叠加。</div>
+</div>
+
+<div class="quiz-q" id="q5">
+  <p>Q5. 分批任务中第 3 批抛异常，怎样保证其他批不中断且能定位重试失败批？</p>
+  <label><input type="radio" name="q5" value="a"> a) 用 allOf，异常会自动跳过该批，无需处理</label>
+  <label><input type="radio" name="q5" value="b"> b) 每个 future 用 handle 把异常转成 BatchOutcome.failure（携带原数据），再 allOf 收集，失败批进重试清单</label>
+  <label><input type="radio" name="q5" value="c"> c) 在 main 里 try-catch 整个 allOf().join()</label>
+  <label><input type="radio" name="q5" value="d"> d) 改成同步循环逐批执行，遇错即停</label>
+  <button class="btn" onclick="check('q5','b')">提交</button>
+  <div class="feedback correct" id="q5-ok">✅ 正确！handle 把异常路和正常路统一成结果对象，allOf 永不整体失败，失败批携带原数据进幂等重试。</div>
+  <div class="feedback wrong"   id="q5-no">❌ 关键是用 handle 做失败隔离：异常转 BatchOutcome.failure 携带原数据，allOf 不被某批异常炸穿，再收集重试。</div>
+</div>
+
+<div id="score-banner">🎉 全部答对！batch-import-optimizer 的设计你已吃透。下一步：把代码真正推上 GitHub。</div>
+
+<!-- 课后行动 -->
+<h2>10. 课后首要行动</h2>
+<ol>
+  <li>新建 GitHub 仓库 <code>batch-import-optimizer</code>，把 <code>BatchImportConfig</code> / <code>BatchImportExecutor</code> / <code>BatchImportResult</code> 三个类敲成可编译的 Maven 项目。</li>
+  <li>写那个 <code>shouldNotExceedConcurrency</code> 单测，并加一个用 CountDownLatch 验证「队列满时主线程被反压」的测试。</li>
+  <li>写 README：必须包含本课 §7 的三个「为什么」（不用 Executors / 选 CallerRunsPolicy / 加 Semaphore）。</li>
+  <li>加一个 10 行的 demo（mock writer 模拟慢 DB），跑出「背压前 OOM vs 背压后稳定」的对比，截图进 README。</li>
+  <li>把核心抽象复制一份到 <code>clickhouse-mcp-server</code>，用于多分片并行写入路径，形成项目联动。</li>
+</ol>
+
+<!-- Primary Source -->
+<h2>Primary Source</h2>
+<ul>
+  <li><a href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/util/concurrent/ThreadPoolExecutor.html" target="_blank">JDK ThreadPoolExecutor Javadoc</a> — 拒绝策略、队列与线程扩张顺序的权威定义。</li>
+  <li><a href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/util/concurrent/ThreadPoolExecutor.CallerRunsPolicy.html" target="_blank">CallerRunsPolicy Javadoc</a> — 背压机制官方说明。</li>
+  <li><a href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/util/concurrent/Semaphore.html" target="_blank">Semaphore Javadoc</a> — 许可、公平性、AQS 共享模式。</li>
+  <li><a href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/util/concurrent/CompletableFuture.html" target="_blank">CompletableFuture Javadoc</a> — allOf / handle / supplyAsync 语义。</li>
+  <li><a href="https://github.com/alibaba/transmittable-thread-local" target="_blank">alibaba/transmittable-thread-local</a> — TtlExecutors 包装线程池实现 traceId 透传。</li>
+</ul>
+
+<div class="box info" style="margin-top:2em">
+  <strong>💬 有疑问？直接问我。</strong>包括：core==max 是否合理、ArrayBlockingQueue 容量怎么定、Semaphore 许可数与连接池大小如何对齐、重试如何做指数退避。
+</div>
+
+<script>
+const answers = {};
+function check(qid, correct) {
+  const radios = document.querySelectorAll(`input[name="${qid}"]`);
+  let selected = null;
+  radios.forEach(r => { if (r.checked) selected = r.value; });
+  if (!selected) return;
+  const ok = selected === correct;
+  document.getElementById(qid + '-ok').style.display = ok ? 'block' : 'none';
+  document.getElementById(qid + '-no').style.display = ok ? 'none' : 'block';
+  answers[qid] = ok;
+  radios.forEach(r => r.disabled = true);
+  document.querySelector(`#${qid} .btn`).disabled = true;
+  checkAll();
+}
+function checkAll() {
+  const total = 5;
+  if (Object.keys(answers).length < total) return;
+  if (Object.values(answers).every(v => v)) {
+    document.getElementById('score-banner').style.display = 'block';
+    document.getElementById('score-banner').scrollIntoView({behavior:'smooth'});
+  }
+}
+</script>
+
+</body>
+</html>
