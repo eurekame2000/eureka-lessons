@@ -1,0 +1,1023 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 21 — MCP Protocol Deep Dive + clickhouse-mcp-server Architecture</title>
+  <style>
+    :root {
+      --bg: #fafaf8;
+      --text: #1a1a1a;
+      --accent: #2563eb;
+      --accent-light: #eff6ff;
+      --border: #e2e8f0;
+      --code-bg: #f1f5f9;
+      --success: #16a34a;
+      --success-light: #f0fdf4;
+      --warn: #d97706;
+      --warn-light: #fffbeb;
+      --danger: #dc2626;
+      --danger-light: #fef2f2;
+      --sidebar: #1e293b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Georgia', serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+    }
+    .layout { display: flex; min-height: 100vh; }
+    nav {
+      width: 220px;
+      background: var(--sidebar);
+      color: #94a3b8;
+      padding: 32px 0;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      flex-shrink: 0;
+    }
+    nav h3 { color: #f1f5f9; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; padding: 0 20px 12px; }
+    nav a { display: block; padding: 6px 20px; color: #94a3b8; text-decoration: none; font-size: 13px; font-family: sans-serif; }
+    nav a:hover { color: #f1f5f9; background: rgba(255,255,255,0.05); }
+    nav .nav-section { margin-bottom: 20px; }
+    main { flex: 1; max-width: 780px; padding: 56px 64px; }
+    .lesson-meta { font-family: sans-serif; font-size: 12px; color: #64748b; margin-bottom: 32px; }
+    .lesson-meta span { margin-right: 16px; }
+    h1 { font-size: 32px; font-weight: 700; margin-bottom: 8px; line-height: 1.2; }
+    h2 { font-size: 20px; font-weight: 700; margin: 40px 0 12px; padding-bottom: 6px; border-bottom: 2px solid var(--border); }
+    h3 { font-size: 16px; font-weight: 700; margin: 24px 0 8px; color: #334155; }
+    p { margin-bottom: 14px; }
+    a { color: var(--accent); }
+    code { font-family: 'Menlo', 'Monaco', monospace; font-size: 13px; background: var(--code-bg); padding: 2px 5px; border-radius: 3px; }
+    pre {
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 20px 24px;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin: 16px 0;
+      font-family: 'Menlo', 'Monaco', monospace;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    pre .comment { color: #64748b; }
+    pre .keyword { color: #93c5fd; }
+    pre .string { color: #86efac; }
+    pre .func { color: #fde68a; }
+    pre .type { color: #f9a8d4; }
+    pre .annotation { color: #c4b5fd; }
+    pre .literal { color: #fca5a5; }
+    .callout {
+      border-left: 4px solid var(--accent);
+      background: var(--accent-light);
+      padding: 14px 18px;
+      margin: 20px 0;
+      border-radius: 0 6px 6px 0;
+      font-size: 14px;
+    }
+    .callout.warn { border-color: var(--warn); background: var(--warn-light); }
+    .callout.success { border-color: var(--success); background: var(--success-light); }
+    .callout.danger { border-color: var(--danger); background: var(--danger-light); }
+    .callout strong { display: block; margin-bottom: 4px; font-family: sans-serif; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .compare {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin: 16px 0;
+    }
+    .compare-box { background: var(--code-bg); border-radius: 8px; padding: 14px; }
+    .compare-box h4 { font-family: sans-serif; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; color: #64748b; }
+    table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px; font-family: sans-serif; }
+    th { background: var(--code-bg); text-align: left; padding: 8px 12px; border-bottom: 2px solid var(--border); font-size: 12px; }
+    td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    tr:hover td { background: var(--accent-light); }
+    ul, ol { margin: 12px 0; padding-left: 24px; font-size: 14px; }
+    li { margin-bottom: 8px; }
+    .arch-box {
+      background: white;
+      border: 2px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+      margin: 16px 0;
+      font-family: sans-serif;
+      font-size: 13px;
+    }
+    .arch-box h4 { font-size: 14px; color: var(--accent); margin-bottom: 6px; }
+    .arch-box .sub { color: #64748b; font-size: 12px; margin-top: 4px; }
+
+    /* Quiz */
+    .quiz-section { background: var(--code-bg); border-radius: 10px; padding: 24px; margin: 32px 0; }
+    .quiz-section h2 { border: none; margin-top: 0; }
+    .quiz-q { margin-bottom: 24px; }
+    .quiz-q p { font-weight: 600; margin-bottom: 10px; font-size: 15px; }
+    .quiz-options { display: grid; gap: 8px; }
+    .quiz-opt { display: block; background: white; border: 2px solid var(--border); border-radius: 6px; padding: 10px 14px; cursor: pointer; font-size: 14px; transition: all 0.15s; text-align: left; width: 100%; font-family: sans-serif; }
+    .quiz-opt:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-light); }
+    .quiz-opt.correct { border-color: #16a34a; background: var(--success-light); color: #16a34a; font-weight: 600; }
+    .quiz-opt.wrong { border-color: var(--danger); background: var(--danger-light); color: var(--danger); }
+    .quiz-opt:disabled { cursor: default; }
+    .quiz-feedback { margin-top: 8px; font-size: 13px; display: none; padding: 8px 12px; border-radius: 4px; background: white; border: 1px solid var(--border); }
+    .quiz-score { text-align: center; font-size: 18px; font-weight: 700; padding: 16px; border-radius: 8px; display: none; margin-top: 16px; font-family: sans-serif; }
+    .quiz-score.good { background: var(--success-light); color: var(--success); }
+    .quiz-score.ok { background: var(--warn-light); color: var(--warn); }
+    .inline-quiz { background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 14px 18px; margin: 20px 0; }
+    .inline-quiz p { margin-bottom: 8px; font-weight: 600; font-size: 14px; }
+    .inline-quiz input { border: 2px solid var(--border); border-radius: 4px; padding: 6px 10px; font-size: 13px; font-family: monospace; width: 100%; max-width: 360px; margin-bottom: 8px; }
+    .inline-quiz button { background: var(--accent); color: white; border: none; border-radius: 4px; padding: 6px 14px; cursor: pointer; font-size: 13px; font-family: sans-serif; }
+    .inline-quiz .feedback { font-size: 13px; margin-top: 6px; display: none; }
+    .inline-quiz .feedback.ok { color: var(--success); }
+    .inline-quiz .feedback.bad { color: var(--danger); }
+
+    .primary-source { background: white; border: 1px solid var(--border); border-radius: 8px; padding: 18px; margin: 32px 0; font-family: sans-serif; }
+    .primary-source .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; margin-bottom: 6px; }
+    .primary-source .title { font-size: 16px; font-weight: 700; color: var(--accent); margin-bottom: 4px; }
+    .primary-source .desc { font-size: 13px; color: #64748b; }
+
+    .nav-links { font-family: sans-serif; font-size: 13px; display: flex; gap: 16px; margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--border); }
+    .nav-links a { color: var(--accent); }
+    .ask-me { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 14px 18px; margin: 32px 0; font-family: sans-serif; font-size: 14px; }
+    .ask-me strong { color: #0369a1; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <nav>
+    <div class="nav-section">
+      <h3>本课导航</h3>
+      <a href="#why">一、为什么需要理解 MCP 协议</a>
+      <a href="#protocol">二、MCP 协议四层架构</a>
+      <a href="#sdk">三、SDK 选择：Java vs Go</a>
+      <a href="#tools">四、工具定义与 JSON Schema</a>
+      <a href="#engine">五、执行引擎设计</a>
+      <a href="#observability">六、可观测性集成</a>
+      <a href="#errors">七、错误处理</a>
+      <a href="#interview">八、面试答法</a>
+      <a href="#quiz">九、检索练习</a>
+    </div>
+    <div class="nav-section">
+      <h3>课程系列</h3>
+      <a href="0001-agent-tool-use-fundamentals.html">01 Tool Use</a>
+      <a href="0002-mcp-protocol-go.html">02 MCP + Go</a>
+      <a href="0010-mcp-observability.html">10 可观测性</a>
+      <a href="0011-mcp-tracing.html">11 链路追踪</a>
+      <a href="0018-completablefuture-in-depth.html">18 CompletableFuture</a>
+      <a href="0019-ttl-mdc-threadpool.html">19 TTL / MDC</a>
+      <a href="0020-batch-import-optimizer.html">20 Batch Import</a>
+      <a href="0021-clickhouse-mcp-server-architecture.html" style="color:#f1f5f9;font-weight:700">21 MCP 架构</a>
+    </div>
+  </nav>
+
+  <main>
+    <div class="lesson-meta">
+      <span>Lesson 21</span>
+      <span>MCP 协议 + clickhouse-mcp-server 架构设计</span>
+      <span>~40 分钟</span>
+    </div>
+
+    <h1>MCP Protocol Deep Dive + clickhouse-mcp-server Architecture Design</h1>
+    <p style="font-size:15px;color:#64748b;margin-bottom:32px">
+      你在 <a href="0002-mcp-protocol-go.html">Lesson 02</a> 搭了 clickhouse-mcp-server 骨架，在 <a href="0020-batch-import-optimizer.html">Lesson 20</a> 造了 BatchImportExecutor。
+      本课站在架构视角，系统设计一个生产级 MCP server：从协议层理解 MCP 的 Transport/Session/Protocol/Application 四层模型，
+      到工具注册、参数校验、异步执行引擎、可观测性集成，最终交付一个可扩展的 clickhouse-mcp-server 架构方案。
+    </p>
+
+    <!-- ===== 开篇连接 ===== -->
+    <div class="callout success">
+      <strong>面试连接</strong>
+      "如何设计一个可扩展的 Tool Use 系统？" 是 Agent/MCP 方向的高频系统设计题。
+      本课用 clickhouse-mcp-server 作为实战锚点，覆盖工具注册、参数校验、执行引擎、可观测性、错误处理五大模块。
+      答出这节课的架构视图，面试官会认为你真正做过 MCP server 设计。
+    </div>
+
+    <!-- ===== 前置检查 ===== -->
+    <h2 id="prereqs">前置检查</h2>
+    <p>下面的两个问题验证你对 MCP 协议和 CompletableFuture 的掌握。如果答不上来，先回顾对应课程。</p>
+
+    <div class="inline-quiz">
+      <p>1. JSON-RPC 2.0 请求消息必须包含哪三个顶层字段？（回顾 <a href="0002-mcp-protocol-go.html">Lesson 02</a>）</p>
+      <input type="text" id="iq1" placeholder="逗号分隔，如 field1, field2, field3">
+      <button onclick="checkInline('iq1', 'jsonrpc,method,id', 'iq1-fb')">检验</button>
+      <div class="feedback" id="iq1-fb"></div>
+    </div>
+
+    <div class="inline-quiz">
+      <p>2. CompletableFuture 中，将两个异步任务的结果合并为一个新的 CompletableFuture 用哪个方法？（回顾 <a href="0018-completablefuture-in-depth.html">Lesson 18</a>）</p>
+      <input type="text" id="iq2" placeholder="方法名，如 thenCombine / thenCompose / allOf">
+      <button onclick="checkInline('iq2', 'thenCombine', 'iq2-fb')">检验</button>
+      <div class="feedback" id="iq2-fb"></div>
+    </div>
+
+    <!-- ===== 一、为什么需要理解 MCP 协议 ===== -->
+    <h2 id="why">一、为什么你的 clickhouse-mcp-server 需要深度理解 MCP 协议</h2>
+    <p>在 <a href="0002-mcp-protocol-go.html">Lesson 02</a> 的骨架中，你硬编码了 tools/call handler，手动解析 JSON-RPC 消息。
+      这在 demo 阶段没问题，但要构建生产级 server，你需要回答三个问题：</p>
+    <ol>
+      <li><strong>协议边界</strong>：MCP 的 Tool/Resource/Prompt 三者在协议层面的差异是什么？为什么选 Tool 而不是 Resource？</li>
+      <li><strong>传输层</strong>：MCP 支持 stdio、SSE、WebSocket 三种 Transport。你的 server 在什么场景下用哪种？</li>
+      <li><strong>扩展性</strong>：后续加一个"list_databases" Resource，需要改动哪些代码？现有架构能否支撑？</li>
+    </ol>
+    <p>这三个问题指向同一个答案：<strong>理解 MCP 协议的四层架构</strong>。</p>
+
+    <!-- ===== 二、MCP 协议四层架构 ===== -->
+    <h2 id="protocol">二、MCP 协议四层架构</h2>
+    <p>MCP (Model Context Protocol) 不是一个简单的"HTTP + JSON"协议，而是一个<strong>四层架构</strong>：</p>
+
+    <div class="arch-box">
+      <h4>Layer 4: Application</h4>
+      <p>Tool / Resource / Prompt — AI agent 的能力接口</p>
+      <div class="sub">Tool: 可执行动作（查询、写入、分析）；Resource: 可读取数据（文档、schema）；Prompt: 固定提示模板</div>
+    </div>
+    <div class="arch-box">
+      <h4>Layer 3: Protocol</h4>
+      <p>JSON-RPC 2.0 消息格式 + MCP 定义的 error codes</p>
+      <div class="sub">请求: {jsonrpc, id, method, params}；响应: {id, result/error}；通知: {method, params}（无 id）</div>
+    </div>
+    <div class="arch-box">
+      <h4>Layer 2: Session</h4>
+      <p>连接生命周期管理：initialize → capabilities negotiation → keepalive → shutdown</p>
+      <div class="sub">Client 和 Server 先交换 capabilities（支持哪些 Tool/Resource/Prompt），再开始业务通信</div>
+    </div>
+    <div class="arch-box">
+      <h4>Layer 1: Transport</h4>
+      <p>底层通信方式：stdio、SSE (Server-Sent Events)、WebSocket</p>
+      <div class="sub">stdio: 子进程双向管道（本地最快）；SSE: HTTP 长连接（远程最常见）；WebSocket: 双向实时（低延迟需求）</div>
+    </div>
+
+    <p><strong>心智模型</strong>：Transport 是"如何连接"，Session 是"如何握手"，Protocol 是"如何说话"，Application 是"能做什么"。
+      你的 clickhouse-mcp-server 主要关注 Layer 1（Transport 选择）和 Layer 4（工具定义）。</p>
+
+    <h3>Transport 选择策略</h3>
+    <table>
+      <tr><th>Transport</th><th>适用场景</th><th>clickhouse-mcp-server 选型</th></tr>
+      <tr><td>stdio</td><td>本地 CLI 工具、VS Code 扩展</td><td>开发阶段快速验证（同 L02）</td></tr>
+      <tr><td>SSE</td><td>HTTP 部署、远程调用</td><td><strong>生产选型</strong>：通过 HTTP 暴露给 AI agent</td></tr>
+      <tr><td>WebSocket</td><td>低延迟双向通信、流式结果</td><td>流式 large query result 时可选</td></tr>
+    </table>
+
+    <div class="callout">
+      <strong>SSE 工作原理</strong>
+      Client 发送 HTTP POST /message 请求，Server 回复 text/event-stream。
+      每个 MCP 消息是一个 SSE event（event: message\ndata: {json}\n\n）。
+      Client 可以同时发送多个请求，Server 通过 id 关联 response。
+    </div>
+
+    <h3>Session 生命周期</h3>
+    <pre><span class="comment">// MCP Session 握手阶段</span>
+<span class="comment">// 1. initialize: Client 发 {method: "initialize", params: {protocolVersion, capabilities}}</span>
+{<span class="string">"jsonrpc"</span>: <span class="string">"2.0"</span>, <span class="string">"id"</span>: 1, <span class="string">"method"</span>: <span class="string">"initialize"</span>, <span class="string">"params"</span>: {
+  <span class="string">"protocolVersion"</span>: <span class="string">"2025-03-26"</span>,
+  <span class="string">"capabilities"</span>: {<span class="string">"tools"</span>: {}, <span class="string">"resources"</span>: {}}
+}}
+
+<span class="comment">// 2. initialized: Server 回复自身 capabilities</span>
+{<span class="string">"jsonrpc"</span>: <span class="string">"2.0"</span>, <span class="string">"id"</span>: 1, <span class="string">"result"</span>: {
+  <span class="string">"protocolVersion"</span>: <span class="string">"2025-03-26"</span>,
+  <span class="string">"capabilities"</span>: {
+    <span class="string">"tools"</span>: {<span class="string">"listChanged"</span>: true}
+  }
+}}
+
+<span class="comment">// 3. 业务通信：Client 调用 tools/list → Server 回复工具列表</span></pre>
+
+    <div class="inline-quiz">
+      <p>MCP 协议中，Session 阶段 Client 发送 initialize 消息的目的是什么？</p>
+      <input type="text" id="iq3" placeholder="简答，20字以内">
+      <button onclick="checkInline('iq3', '协商协议版本和能力', 'iq3-fb')">检验</button>
+      <div class="feedback" id="iq3-fb"></div>
+    </div>
+
+    <!-- ===== 三、SDK 选择 ===== -->
+    <h2 id="sdk">三、SDK 选择：Java vs Go</h2>
+    <p>你的 clickhouse-mcp-server 可以用 Java 或 Go 实现。下面是选型对比：</p>
+
+    <table>
+      <tr><th>维度</th><th>Java (spring-ai / langchain4j)</th><th>Go (mcp-go)</th></tr>
+      <tr><td>MCP 协议支持</td><td>spring-ai 官方支持 MCP 协议（2025+）；langchain4j 有 community MCP 适配</td><td>mcp-go 成熟（github.com/mark3labs/mcp-go），协议覆盖完整</td></tr>
+      <tr><td>ClickHouse 生态</td><td>clickhouse-jdbc / clickhouse-client — 成熟驱动，连接池完善</td><td>clickhouse-go — 官方 Go 驱动，性能好</td></tr>
+      <tr><td>异步支持</td><td>CompletableFuture + ForkJoinPool（L18）</td><td>goroutine + channel（L05）</td></tr>
+      <tr><td>可观测性</td><td>Micrometer + TTL MDC（L19）</td><td>OpenTelemetry Go SDK</td></tr>
+      <tr><td>部署</td><td>JAR + JVM（250MB+）</td><td>单二进制（15MB）</td></tr>
+      <tr><td>学习曲线</td><td>你已有的 Java 技能直接复用</td><td>需额外学习 Go 语言</td></tr>
+    </table>
+
+    <div class="callout">
+      <strong>本课选择：Java</strong>
+      理由：(1) 你的主力语言是 Java，本课 focus 在架构设计而非语言学习；(2) L18 CompletableFuture + L19 TTL/MDC + L20 BatchImportExecutor 都基于 Java，可以直接复用；(3) spring-ai 对 MCP 协议的封装比 mcp-go 更成熟。
+    </div>
+
+    <p>MCP server 的 Java 核心依赖：</p>
+    <pre><span class="comment">// build.gradle — MCP server 核心依赖</span>
+dependencies {
+    <span class="comment">// MCP 协议支持 (spring-ai 官方)</span>
+    implementation <span class="string">'org.springframework.ai:spring-ai-mcp-server-spring-boot-starter:1.0.0'</span>
+
+    <span class="comment">// ClickHouse 驱动</span>
+    implementation <span class="string">'com.clickhouse:clickhouse-jdbc:0.7.2'</span>
+
+    <span class="comment">// 异步执行引擎（L18）</span>
+    implementation <span class="string">'io.vavr:vavr:0.10.5'</span>  <span class="comment">// Try / Either monad</span>
+
+    <span class="comment">// 可观测性（L10/L11）</span>
+    implementation <span class="string">'io.micrometer:micrometer-tracing-bridge-otel:1.4.0'</span>
+}
+
+<span class="comment">// application.yml — MCP server 配置</span>
+spring:
+  ai:
+    mcp:
+      server:
+        name: clickhouse-mcp-server
+        version: 1.0.0
+        transport: sse  <span class="comment">// SSE transport for production</span>
+        sse-port: 8081</pre>
+
+    <div class="inline-quiz">
+      <p>为什么生产环境选择 SSE 而不是 stdio Transport？</p>
+      <input type="text" id="iq4" placeholder="简答，20字以内">
+      <button onclick="checkInline('iq4', '支持远程HTTP部署', 'iq4-fb')">检验</button>
+      <div class="feedback" id="iq4-fb"></div>
+    </div>
+
+    <!-- ===== 四、工具定义与 JSON Schema ===== -->
+    <h2 id="tools">四、工具定义与 JSON Schema 参数校验</h2>
+
+    <h3>MCP Tool 定义结构</h3>
+    <p>MCP 协议中，每个 Tool 由三部分构成：名称、描述、输入 schema。<code>tools/list</code> 返回的工具列表如下：</p>
+    <pre><span class="comment">// MCP tools/list 响应示例</span>
+{
+  <span class="string">"jsonrpc"</span>: <span class="string">"2.0"</span>,
+  <span class="string">"id"</span>: 1,
+  <span class="string">"result"</span>: {
+    <span class="string">"tools"</span>: [
+      {
+        <span class="string">"name"</span>: <span class="string">"query"</span>,
+        <span class="string">"description"</span>: <span class="string">"Execute a read-only SQL query on ClickHouse and return results as JSON"</span>,
+        <span class="string">"inputSchema"</span>: {
+          <span class="string">"type"</span>: <span class="string">"object"</span>,
+          <span class="string">"properties"</span>: {
+            <span class="string">"sql"</span>: { <span class="string">"type"</span>: <span class="string">"string"</span>, <span class="string">"description"</span>: <span class="string">"SELECT SQL statement"</span> },
+            <span class="string">"format"</span>: { <span class="string">"type"</span>: <span class="string">"string"</span>, <span class="string">"enum"</span>: [<span class="string">"json"</span>, <span class="string">"csv"</span>, <span class="string">"table"</span>], <span class="string">"default"</span>: <span class="string">"json"</span> },
+            <span class="string">"limit"</span>: { <span class="string">"type"</span>: <span class="string">"integer"</span>, <span class="string">"default"</span>: 100, <span class="string">"minimum"</span>: 1, <span class="string">"maximum"</span>: 10000 }
+          },
+          <span class="string">"required"</span>: [<span class="string">"sql"</span>]
+        }
+      },
+      {
+        <span class="string">"name"</span>: <span class="string">"batch_insert"</span>,
+        <span class="string">"description"</span>: <span class="string">"Batch insert rows into a ClickHouse table with batching and retry"</span>,
+        <span class="string">"inputSchema"</span>: {
+          <span class="string">"type"</span>: <span class="string">"object"</span>,
+          <span class="string">"properties"</span>: {
+            <span class="string">"table"</span>: { <span class="string">"type"</span>: <span class="string">"string"</span>, <span class="string">"description"</span>: <span class="string">"Target table name, e.g. events.raw_log"</span> },
+            <span class="string">"columns"</span>: { <span class="string">"type"</span>: <span class="string">"array"</span>, <span class="string">"items"</span>: { <span class="string">"type"</span>: <span class="string">"string"</span> }, <span class="string">"description"</span>: <span class="string">"Column names"</span> },
+            <span class="string">"rows"</span>: { <span class="string">"type"</span>: <span class="string">"array"</span>, <span class="string">"items"</span>: { <span class="string">"type"</span>: <span class="string">"array"</span> }, <span class="string">"description"</span>: <span class="string">"Row data"</span> },
+            <span class="string">"batchSize"</span>: { <span class="string">"type"</span>: <span class="string">"integer"</span>, <span class="string">"default"</span>: 1000, <span class="string">"minimum"</span>: 1, <span class="string">"maximum"</span>: 100000 }
+          },
+          <span class="string">"required"</span>: [<span class="string">"table"</span>, <span class="string">"columns"</span>, <span class="string">"rows"</span>]
+        }
+      },
+      {
+        <span class="string">"name"</span>: <span class="string">"schema"</span>,
+        <span class="string">"description"</span>: <span class="string">"List tables, columns, and types in a database or table"</span>,
+        <span class="string">"inputSchema"</span>: {
+          <span class="string">"type"</span>: <span class="string">"object"</span>,
+          <span class="string">"properties"</span>: {
+            <span class="string">"table"</span>: { <span class="string">"type"</span>: <span class="string">"string"</span>, <span class="string">"description"</span>: <span class="string">"Optional: specific table name. Omit to list all tables"</span> },
+            <span class="string">"database"</span>: { <span class="string">"type"</span>: <span class="string">"string"</span>, <span class="string">"default"</span>: <span class="string">"default"</span>, <span class="string">"description"</span>: <span class="string">"Database name"</span> }
+          },
+          <span class="string">"required"</span>: []
+        }
+      }
+    ]
+  }
+}</pre>
+
+    <h3>JSON Schema 校验最佳实践</h3>
+    <p>AI agent 可能会生成错误的参数（拼错字段名、传错类型）。必须在校验层拦截，不要等到执行层才报错。</p>
+
+    <pre><span class="keyword">public class</span> <span class="type">ToolSchemaValidator</span> {
+
+    <span class="comment">// 使用 NetworkNT JSON Schema 校验器</span>
+    <span class="keyword">private static final</span> JsonSchemaFactory factory =
+        JsonSchemaFactory.getInstance(SpecVersion.VariantFlag.V7);
+
+    <span class="keyword">public</span> ValidationResult <span class="func">validate</span>(String toolName, Map&lt;String, Object&gt; args) {
+        JsonSchema schema = <span class="func">getSchemaForTool</span>(toolName);
+        JsonNode node = <span class="func">toJsonNode</span>(args);
+
+        Set&lt;ValidationMessage&gt; errors = schema.<span class="func">validate</span>(node);
+
+        <span class="keyword">if</span> (errors.<span class="func">isEmpty</span>()) {
+            <span class="keyword">return</span> ValidationResult.<span class="func">valid</span>();
+        }
+
+        <span class="comment">// 将 schema 错误转为用户友好的中文提示</span>
+        List&lt;String&gt; friendly = errors.<span class="func">stream</span>()
+            .<span class="func">map</span>(e -> <span class="func">toChineseMessage</span>(toolName, e))
+            .<span class="func">collect</span>(Collectors.<span class="func">toList</span>());
+
+        <span class="keyword">return</span> ValidationResult.<span class="func">invalid</span>(friendly);
+    }
+
+    <span class="keyword">private</span> String <span class="func">toChineseMessage</span>(String tool, ValidationMessage msg) {
+        <span class="keyword">if</span> (msg.<span class="func">getKeyword</span>().<span class="func">equals</span>(<span class="string">"required"</span>)) {
+            <span class="keyword">return</span> String.<span class="func">format</span>(<span class="string">"工具 '%s' 缺少必需参数: %s"</span>, tool, msg.<span class="func">getArguments</span>().<span class="func">get</span>(<span class="string">"missing"</span>));
+        }
+        <span class="keyword">if</span> (msg.<span class="func">getKeyword</span>().<span class="func">equals</span>(<span class="string">"type"</span>)) {
+            <span class="keyword">return</span> String.<span class="func">format</span>(<span class="string">"参数类型错误: 期望 %s, 实际 %s"</span>,
+                msg.<span class="func">getArguments</span>().<span class="func">get</span>(<span class="string">"expected"</span>), msg.<span class="func">getArguments</span>().<span class="func">get</span>(<span class="string">"found"</span>));
+        }
+        <span class="keyword">return</span> msg.<span class="func">getMessage</span>();
+    }
+}</pre>
+
+    <div class="callout warn">
+      <strong>工具设计原则</strong>
+      (1) 工具名称要<strong>动词开头</strong>（query, batch_insert, schema） — AI 模型更容易理解；(2) 描述要<strong>告诉 agent 何时用、何时不用</strong>；(3) required 字段越少越好 — agent 的猜测准确度有限；(4) 用 JSON Schema 的 <code>enum</code> / <code>minimum</code> / <code>maximum</code> 做静态校验。
+    </div>
+
+    <div class="inline-quiz">
+      <p>对于 schema 工具，为什么 required 字段设为空数组（所有字段可选）？</p>
+      <input type="text" id="iq5" placeholder="简答，20字以内">
+      <button onclick="checkInline('iq5', '让agent可以无参数调用列出所有表', 'iq5-fb')">检验</button>
+      <div class="feedback" id="iq5-fb"></div>
+    </div>
+
+    <!-- ===== 五、执行引擎设计 ===== -->
+    <h2 id="engine">五、执行引擎设计</h2>
+
+    <h3>架构总览</h3>
+    <p>执行引擎是 clickhouse-mcp-server 的核心。它接收经过校验的工具调用，编排执行流程：</p>
+
+    <pre>
+<span class="comment">// 执行引擎流程图</span>
+<span class="comment">//</span>
+<span class="comment">// Tool Call Request</span>
+<span class="comment">//       │</span>
+<span class="comment">//       ▼</span>
+<span class="comment">//  ┌──────────────┐</span>
+<span class="comment">//  │ Schema Valid. │ ← ToolSchemaValidator</span>
+<span class="comment">//  └──────┬───────┘</span>
+<span class="comment">//         ▼ (invalid → return error to agent)</span>
+<span class="comment">//  ┌──────────────┐</span>
+<span class="comment">//  │ Rate Limiter │ ← 防止 agent 过载 ClickHouse</span>
+<span class="comment">//  └──────┬───────┘</span>
+<span class="comment">//         ▼</span>
+<span class="comment">//  ┌──────────────────┐</span>
+<span class="comment">//  │ Execution Plan   │ ← 同步/异步？是否需要重试？</span>
+<span class="comment">//  └──────┬───────────┘</span>
+<span class="comment">//         ▼</span>
+<span class="comment">//  ┌──────────────────┐</span>
+<span class="comment">//  │ Executor         │ ← CompletableFuture chain (L18)</span>
+<span class="comment">//  │  query → CH JDBC │    thenApply → thenCompose → exceptionally</span>
+<span class="comment">//  │  batch → L20     │</span>
+<span class="comment">//  │  schema→ info    │</span>
+<span class="comment">//  └──────┬───────────┘</span>
+<span class="comment">//         ▼</span>
+<span class="comment">//  ┌──────────────┐</span>
+<span class="comment">//  │ Result       │ ← 格式转换 + trace 数据回填</span>
+<span class="comment">//  └──────────────┘</span></pre>
+
+    <h3>核心接口</h3>
+    <pre><span class="keyword">public interface</span> <span class="type">ToolExecutor</span>&lt;T&gt; {
+
+    <span class="comment">/**</span>
+    <span class="comment"> * 执行一个工具调用，返回 CompletableFuture</span>
+    <span class="comment"> * 同步工具直接返回 CompletableFuture.completedFuture(result)</span>
+    <span class="comment"> * 异步工具真实编排执行链</span>
+    <span class="comment"> */</span>
+    CompletableFuture&lt;ToolResult&gt; <span class="func">execute</span>(ToolContext ctx, Map&lt;String, Object&gt; params);
+}
+
+<span class="keyword">public record</span> <span class="type">ToolResult</span>(
+    <span class="type">boolean</span> success,
+    Object data,           <span class="comment">// 执行结果（JSON 序列化后返回给 agent）</span>
+    <span class="type">long</span> durationMs,       <span class="comment">// 执行耗时（可观测性）</span>
+    String errorMessage,   <span class="comment">// 失败时的中文友好错误消息</span>
+    String traceId         <span class="comment">// 链路追踪 ID（L11）</span>
+) {}
+
+<span class="keyword">public record</span> <span class="type">ToolContext</span>(
+    String toolName,
+    String traceId,            <span class="comment">// 从 MCP 请求头提取的 trace ID</span>
+    String parentSpanId,       <span class="comment">// 父 span ID 用于链路串联</span>
+    Map&lt;String, String&gt; baggage <span class="comment">// W3C Baggage: user_id, session_id 等</span>
+) {}</pre>
+
+    <h3>工具执行器实现：query</h3>
+    <pre><span class="keyword">public class</span> <span class="type">QueryExecutor</span> <span class="keyword">implements</span> <span class="type">ToolExecutor</span>&lt;Void&gt; {
+
+    <span class="keyword">private final</span> DataSource clickHouseDS;
+    <span class="keyword">private final</span> ObjectMapper jsonMapper;
+
+    <span class="keyword">public</span> CompletableFuture&lt;ToolResult&gt; <span class="func">execute</span>(ToolContext ctx, Map&lt;String, Object&gt; params) {
+        String sql = (String) params.<span class="func">get</span>(<span class="string">"sql"</span>);
+        String format = (String) params.<span class="func">getOrDefault</span>(<span class="string">"format"</span>, <span class="string">"json"</span>);
+        <span class="type">int</span> limit = (<span class="type">int</span>) params.<span class="func">getOrDefault</span>(<span class="string">"limit"</span>, 100);
+
+        <span class="keyword">long</span> start = System.<span class="func">nanoTime</span>();
+
+        <span class="keyword">return</span> CompletableFuture
+            .<span class="func">supplyAsync</span>(() -> {
+                <span class="comment">// Step 1: SQL 安全检查（只允许 SELECT）</span>
+                <span class="func">validateReadOnly</span>(sql);
+
+                <span class="comment">// Step 2: 执行查询</span>
+                <span class="keyword">try</span> (<span class="type">var</span> conn = clickHouseDS.<span class="func">getConnection</span>();
+                     <span class="type">var</span> stmt = conn.<span class="func">createStatement</span>()) {
+                    stmt.<span class="func">setMaxRows</span>(limit);
+                    <span class="type">var</span> rs = stmt.<span class="func">executeQuery</span>(sql);
+                    <span class="keyword">return</span> <span class="func">resultSetToJson</span>(rs);
+                }
+            }, <span class="type">ExecutorProvider</span>.<span class="func">getClickHousePool</span>())
+            .<span class="func">thenApply</span>(json -> {
+                <span class="type">long</span> elapsed = (System.<span class="func">nanoTime</span>() - start) / 1_000_000;
+                <span class="keyword">return</span> <span class="keyword">new</span> <span class="type">ToolResult</span>(<span class="keyword">true</span>, json, elapsed, <span class="keyword">null</span>, ctx.<span class="func">traceId</span>());
+            })
+            .<span class="func">exceptionally</span>(ex -> {
+                <span class="type">long</span> elapsed = (System.<span class="func">nanoTime</span>() - start) / 1_000_000;
+                <span class="keyword">return</span> <span class="keyword">new</span> <span class="type">ToolResult</span>(<span class="keyword">false</span>, <span class="keyword">null</span>, elapsed,
+                    <span class="string">"查询执行失败: "</span> + <span class="func">toUserFriendlyError</span>(ex),
+                    ctx.<span class="func">traceId</span>());
+            });
+    }
+
+    <span class="keyword">private void</span> <span class="func">validateReadOnly</span>(String sql) {
+        String trimmed = sql.<span class="func">trim</span>().<span class="func">toUpperCase</span>();
+        <span class="keyword">if</span> (!trimmed.<span class="func">startsWith</span>(<span class="string">"SELECT"</span>)
+            &amp;&amp; !trimmed.<span class="func">startsWith</span>(<span class="string">"SHOW"</span>)
+            &amp;&amp; !trimmed.<span class="func">startsWith</span>(<span class="string">"DESCRIBE"</span>)
+            &amp;&amp; !trimmed.<span class="func">startsWith</span>(<span class="string">"EXISTS"</span>)) {
+            <span class="keyword">throw new</span> <span class="type">IllegalArgumentException</span>(
+                <span class="string">"只允许只读查询（SELECT / SHOW / DESCRIBE / EXISTS）。写入请使用 batch_insert 工具。"</span>
+            );
+        }
+    }
+}</pre>
+
+    <h3>工具执行器实现：batch_insert（复用 L20）</h3>
+    <pre><span class="comment">// batch_insert 执行器 — 复用 Lesson 20 的 BatchImportExecutor</span>
+<span class="keyword">public class</span> <span class="type">BatchInsertExecutor</span> <span class="keyword">implements</span> <span class="type">ToolExecutor</span>&lt;Void&gt; {
+
+    <span class="comment">// 从 L20 引入的写入引擎</span>
+    <span class="keyword">private final</span> <span class="type">BatchImportExecutor</span> batchImporter;
+
+    <span class="keyword">public</span> <span class="type">BatchInsertExecutor</span>(BatchImportExecutor batchImporter) {
+        <span class="keyword">this</span>.batchImporter = batchImporter;
+    }
+
+    <span class="keyword">public</span> CompletableFuture&lt;ToolResult&gt; <span class="func">execute</span>(ToolContext ctx, Map&lt;String, Object&gt; params) {
+        String table = (String) params.<span class="func">get</span>(<span class="string">"table"</span>);
+        List&lt;String&gt; columns = (List&lt;String&gt;) params.<span class="func">get</span>(<span class="string">"columns"</span>);
+        List&lt;List&lt;Object&gt;&gt; rows = (List&lt;List&lt;Object&gt;&gt;) params.<span class="func">get</span>(<span class="string">"rows"</span>);
+        <span class="type">int</span> batchSize = (<span class="type">int</span>) params.<span class="func">getOrDefault</span>(<span class="string">"batchSize"</span>, 1000);
+
+        <span class="keyword">long</span> start = System.<span class="func">nanoTime</span>();
+
+        <span class="keyword">return</span> CompletableFuture
+            .<span class="func">supplyAsync</span>(() -> {
+                <span class="comment">// 直接复用 L20 的 BatchImportExecutor</span>
+                BatchResult result = batchImporter.<span class="func">importBatch</span>(
+                    <span class="type">BatchRequest</span>.<span class="func">builder</span>()
+                        .<span class="func">table</span>(table)
+                        .<span class="func">columns</span>(columns)
+                        .<span class="func">rows</span>(rows)
+                        .<span class="func">batchSize</span>(batchSize)
+                        .<span class="func">build</span>()
+                );
+
+                <span class="keyword">return</span> Map.<span class="func">of</span>(
+                    <span class="string">"insertedRows"</span>, result.<span class="func">insertedRows</span>(),
+                    <span class="string">"batchCount"</span>, result.<span class="func">batchCount</span>(),
+                    <span class="string">"durationMs"</span>, result.<span class="func">durationMs</span>(),
+                    <span class="string">"errors"</span>, result.<span class="func">errors</span>()
+                );
+            })
+            .<span class="func">thenApply</span>(data -> {
+                <span class="type">long</span> elapsed = (System.<span class="func">nanoTime</span>() - start) / 1_000_000;
+                <span class="keyword">return</span> <span class="keyword">new</span> <span class="type">ToolResult</span>(<span class="keyword">true</span>, data, elapsed, <span class="keyword">null</span>, ctx.<span class="func">traceId</span>());
+            })
+            .<span class="func">exceptionally</span>(ex -> <span class="keyword">new</span> <span class="type">ToolResult</span>(<span class="keyword">false</span>, <span class="keyword">null</span>,
+                (System.<span class="func">nanoTime</span>() - start) / 1_000_000,
+                <span class="string">"批量写入失败: "</span> + <span class="func">toUserFriendlyError</span>(ex),
+                ctx.<span class="func">traceId</span>()));
+    }
+}</pre>
+
+    <h3>超时控制与重试策略</h3>
+    <pre><span class="keyword">public class</span> <span class="type">RetryableExecutor</span>&lt;T&gt; {
+
+    <span class="keyword">private final</span> <span class="type">int</span> maxRetries;
+    <span class="keyword">private final</span> <span class="type">long</span> baseDelayMs;
+
+    <span class="keyword">public</span> <span class="type">RetryableExecutor</span>(int maxRetries, long baseDelayMs) {
+        <span class="keyword">this</span>.maxRetries = maxRetries;
+        <span class="keyword">this</span>.baseDelayMs = baseDelayMs;
+    }
+
+    <span class="keyword">public</span> CompletableFuture&lt;T&gt; <span class="func">executeWithRetry</span>(
+            Supplier&lt;CompletableFuture&lt;T&gt;&gt; action,
+            Predicate&lt;Throwable&gt; shouldRetry) {
+
+        CompletableFuture&lt;T&gt; future = action.<span class="func">get</span>();
+        <span class="keyword">for</span> (<span class="type">int</span> attempt = 1; attempt &lt;= maxRetries; attempt++) {
+            <span class="type">int</span> currentAttempt = attempt;
+            future = future
+                .<span class="func">exceptionallyCompose</span>(ex -> {
+                    <span class="keyword">if</span> (shouldRetry.<span class="func">test</span>(ex)) {
+                        <span class="keyword">long</span> delay = baseDelayMs * (<span class="type">long</span>) Math.<span class="func">pow</span>(2, currentAttempt);
+                        <span class="keyword">return</span> <span class="type">CompletableFutureUtil</span>
+                            .<span class="func">delayedExecutor</span>(delay, TimeUnit.MILLISECONDS)
+                            .<span class="func">thenComposeAsync</span>(_unused -> action.<span class="func">get</span>());
+                    }
+                    <span class="keyword">return</span> CompletableFuture.<span class="func">failedFuture</span>(ex);
+                });
+        }
+        <span class="keyword">return</span> future;
+    }
+}</pre>
+
+    <p>重试策略要点：</p>
+    <ul>
+      <li><strong>网络超时</strong>（SocketTimeoutException）→ 重试，指数退避 100ms/200ms/400ms</li>
+      <li><strong>ClickHouse Replica 临时不可用</strong> → 重试，指数退避 + jitter</li>
+      <li><strong>SQL 语法错误</strong> → 不重试，立即返回给 agent 提示修改 SQL</li>
+      <li><strong>数据校验失败</strong>（重复主键）→ 不重试，返回具体错误行号</li>
+    </ul>
+
+    <h3>线程池隔离</h3>
+    <pre><span class="keyword">public class</span> <span class="type">ExecutorProvider</span> {
+
+    <span class="comment">// 查询线程池：IO 密集型，用较多线程</span>
+    <span class="keyword">private static final</span> ExecutorService clickHousePool =
+        <span class="keyword">new</span> <span class="type">ThreadPoolExecutor</span>(
+            <span class="literal">10</span>,            <span class="comment">// corePoolSize</span>
+            <span class="literal">50</span>,            <span class="comment">// maxPoolSize</span>
+            <span class="literal">60</span>, TimeUnit.SECONDS,
+            <span class="keyword">new</span> <span class="type">LinkedBlockingQueue</span>&lt;&gt;(<span class="literal">200</span>),
+            <span class="keyword">new</span> <span class="type">ThreadFactoryBuilder</span>().<span class="func">setNameFormat</span>(<span class="string">"ch-query-%d"</span>).<span class="func">build</span>(),
+            <span class="keyword">new</span> <span class="type">ThreadPoolExecutor</span>.<span class="type">CallerRunsPolicy</span>()
+        );
+
+    <span class="comment">// 写入线程池：批量操作，复用 L20 的设计</span>
+    <span class="keyword">private static final</span> ExecutorService batchPool =
+        <span class="keyword">new</span> <span class="type">ThreadPoolExecutor</span>(
+            <span class="literal">4</span>, <span class="literal">20</span>, <span class="literal">60</span>, TimeUnit.SECONDS,
+            <span class="keyword">new</span> <span class="type">LinkedBlockingQueue</span>&lt;&gt;(<span class="literal">100</span>),
+            <span class="keyword">new</span> <span class="type">ThreadFactoryBuilder</span>().<span class="func">setNameFormat</span>(<span class="string">"ch-batch-%d"</span>).<span class="func">build</span>(),
+            <span class="keyword">new</span> <span class="type">ThreadPoolExecutor</span>.<span class="type">AbortPolicy</span>()
+        );
+
+    <span class="keyword">public static</span> ExecutorService <span class="func">getClickHousePool</span>() { <span class="keyword">return</span> clickHousePool; }
+    <span class="keyword">public static</span> ExecutorService <span class="func">getBatchPool</span>() { <span class="keyword">return</span> batchPool; }
+}</pre>
+
+    <div class="callout warn">
+      <strong>面试高频点：线程池隔离</strong>
+      为什么要区分查询和写入两个线程池？因为查询是 IO 密集型（等待 ClickHouse 返回数据），写入是 CPU 密集型（序列化 + 分批）。
+      混在一起时，大量慢查询可能占满线程池，导致写入任务饿死。用不同的 ThreadPoolExecutor 实现<strong>舱壁隔离 (Bulkhead)</strong>。
+    </div>
+
+    <div class="inline-quiz">
+      <p>RetryableExecutor 中为什么对 SQL 语法错误不重试？</p>
+      <input type="text" id="iq6" placeholder="简答，20字以内">
+      <button onclick="checkInline('iq6', '重试无法修复语法错误', 'iq6-fb')">检验</button>
+      <div class="feedback" id="iq6-fb"></div>
+    </div>
+
+    <!-- ===== 六、可观测性集成 ===== -->
+    <h2 id="observability">六、可观测性集成</h2>
+
+    <p><a href="0010-mcp-observability.html">Lesson 10</a> 和 <a href="0011-mcp-tracing.html">Lesson 11</a> 分别讲解了 MCP 的可观测性和链路追踪。
+      本课将它们集成到 clickhouse-mcp-server 的执行引擎中。</p>
+
+    <h3>Trace 传播流程</h3>
+    <pre><span class="comment">// MCP Server 中 trace 传播流程</span>
+<span class="comment">//</span>
+<span class="comment">// AI Agent                    MCP Server                ClickHouse</span>
+<span class="comment">//    │                            │                        │</span>
+<span class="comment">//    │ tools/call                 │                        │</span>
+<span class="comment">//    ├─── jsonrpc request ───────►│                        │</span>
+<span class="comment">//    │   traceparent: 00-abc-...  │                        │</span>
+<span class="comment">//    │                            ├─── SELECT ... ───────►│</span>
+<span class="comment">//    │                            │   traceparent: 00-def │</span>
+<span class="comment">//    │                            │◄──── result ─────────┤</span>
+<span class="comment">//    │◄─── jsonrpc response ─────┤                        │</span>
+<span class="comment">//    │   traceparent: ...        │                        │</span>
+<span class="comment">//</span>
+<span class="comment">// 关键: MCP 请求的 traceparent 头部</span>
+<span class="comment">// 由 MCP Session 层自动提取，注入到 ToolContext</span>
+<span class="comment">// 执行引擎再透传给 ClickHouse JDBC 驱动的 OpenTelemetry 集成</span></pre>
+
+    <pre><span class="comment">// Trace 上下文注入到 ClickHouse JDBC</span>
+<span class="keyword">public class</span> <span class="type">TracingConnectionFactory</span> {
+
+    <span class="keyword">private final</span> Tracer tracer;
+    <span class="keyword">private final</span> DataSource dataSource;
+
+    <span class="keyword">public</span> Connection <span class="func">getTracedConnection</span>(ToolContext ctx) <span class="keyword">throws</span> SQLException {
+        Connection conn = dataSource.<span class="func">getConnection</span>();
+
+        <span class="comment">// 注入 trace context</span>
+        Span span = tracer.<span class="func">spanBuilder</span>(<span class="string">"clickhouse.query"</span>)
+            .<span class="func">setParent</span>(TraceContext.<span class="func">fromString</span>(ctx.<span class="func">traceId</span>()))
+            .<span class="func">startSpan</span>();
+
+        <span class="comment">// 在 MDC 中设置 traceId（L19 TTL/MDC 模式）</span>
+        MDC.<span class="func">put</span>(<span class="string">"traceId"</span>, ctx.<span class="func">traceId</span>());
+        MDC.<span class="func">put</span>(<span class="string">"spanId"</span>, span.<span class="func">getSpanContext</span>().<span class="func">getSpanId</span>());
+
+        <span class="comment">// 返回包装后的 Connection</span>
+        <span class="keyword">return</span> <span class="keyword">new</span> <span class="type">TracedConnection</span>(conn, span, ctx);
+    }
+}
+
+<span class="comment">// 在工具执行器中包装</span>
+<span class="keyword">public</span> CompletableFuture&lt;ToolResult&gt; <span class="func">execute</span>(ToolContext ctx, Map&lt;String, Object&gt; params) {
+    <span class="comment">// L19 的 TTL MDC 包装器，确保子线程传递 MDC</span>
+    <span class="keyword">return</span> CompletableFuture
+        .<span class="func">supplyAsync</span>(
+            TtlRunnable.<span class="func">wrap</span>(() -> {
+                <span class="keyword">try</span> (Connection conn = tracingFactory.<span class="func">getTracedConnection</span>(ctx)) {
+                    <span class="comment">// ... 执行查询</span>
+                }
+            }),
+            executorProvider.<span class="func">getClickHousePool</span>()
+        );
+}</pre>
+
+    <div class="inline-quiz">
+      <p>MCP 请求的 trace 上下文通过哪个 HTTP 头传播？（W3C 标准）</p>
+      <input type="text" id="iq7" placeholder="Header 名称">
+      <button onclick="checkInline('iq7', 'traceparent', 'iq7-fb')">检验</button>
+      <div class="feedback" id="iq7-fb"></div>
+    </div>
+
+    <!-- ===== 七、错误处理 ===== -->
+    <h2 id="errors">七、错误处理</h2>
+
+    <p>MCP 错误处理分为两个层面：<strong>协议错误</strong>（JSON-RPC error code）和<strong>业务错误</strong>（工具执行失败）。</p>
+
+    <h3>MCP 错误码规范</h3>
+    <table>
+      <tr><th>Error Code</th><th>含义</th><th>clickhouse-mcp-server 场景</th></tr>
+      <tr><td>-32700</td><td>Parse Error</td><td>JSON 解析失败</td></tr>
+      <tr><td>-32600</td><td>Invalid Request</td><td>JSON-RPC 结构不合法</td></tr>
+      <tr><td>-32601</td><td>Method not found</td><td>调用不存在的工具名称</td></tr>
+      <tr><td>-32602</td><td>Invalid params</td><td>JSON Schema 校验失败</td></tr>
+      <tr><td>-32603</td><td>Internal error</td><td>ClickHouse 连接异常 / SQL 执行报错</td></tr>
+      <tr><td>-32000 ~ -32099</td><td>Server error (自定义)</td><td>-32001: 超时 / -32002: 限流 / -32003: 写入冲突</td></tr>
+    </table>
+
+    <pre><span class="keyword">public class</span> <span class="type">McpErrorResponse</span> {
+
+    <span class="comment">// MCP 协议要求的错误响应格式</span>
+    <span class="keyword">public static</span> Map&lt;String, Object&gt; <span class="func">invalidParams</span>(String friendlyMessage) {
+        <span class="keyword">return</span> Map.<span class="func">of</span>(
+            <span class="string">"jsonrpc"</span>, <span class="string">"2.0"</span>,
+            <span class="string">"id"</span>, <span class="keyword">null</span>,
+            <span class="string">"error"</span>, Map.<span class="func">of</span>(
+                <span class="string">"code"</span>, -32602,
+                <span class="string">"message"</span>, <span class="string">"Invalid params"</span>,
+                <span class="string">"data"</span>, Map.<span class="func">of</span>(
+                    <span class="string">"friendly"</span>, friendlyMessage,
+                    <span class="string">"hint"</span>, <span class="string">"请检查工具参数是否符合 JSON Schema 定义"</span>
+                )
+            )
+        );
+    }
+
+    <span class="keyword">public static</span> Map&lt;String, Object&gt; <span class="func">internalError</span>(String operation, Throwable ex, String traceId) {
+        <span class="keyword">return</span> Map.<span class="func">of</span>(
+            <span class="string">"jsonrpc"</span>, <span class="string">"2.0"</span>,
+            <span class="string">"id"</span>, <span class="keyword">null</span>,
+            <span class="string">"error"</span>, Map.<span class="func">of</span>(
+                <span class="string">"code"</span>, -32603,
+                <span class="string">"message"</span>, <span class="string">"Internal error"</span>,
+                <span class="string">"data"</span>, Map.<span class="func">of</span>(
+                    <span class="string">"friendly"</span>, <span class="string">"ClickHouse 操作失败: "</span> + <span class="func">shortMessage</span>(ex),
+                    <span class="string">"traceId"</span>, traceId,
+                    <span class="string">"hint"</span>, <span class="string">"请检查 ClickHouse 连接状态和查询语法。如需排查，向管理员提供 traceId。"</span>
+                )
+            )
+        );
+    }
+
+    <span class="keyword">private static</span> String <span class="func">shortMessage</span>(Throwable ex) {
+        String msg = (ex.<span class="func">getMessage</span>() != <span class="keyword">null</span>) ? ex.<span class="func">getMessage</span>() : ex.<span class="func">toString</span>();
+        <span class="keyword">if</span> (msg.<span class="func">length</span>() &gt; 200) {
+            <span class="keyword">return</span> msg.<span class="func">substring</span>(0, 200) + <span class="string">"..."</span>;
+        }
+        <span class="keyword">return</span> msg;
+    }
+}</pre>
+
+    <div class="callout success">
+      <strong>错误设计原则</strong>
+      (1) <strong>friendly 字段</strong>永远使用中文，因为 agent 以中文提问，中文错误的 self-correct 成功率更高；
+      (2) <strong>traceId 字段</strong>让 agent 在无法处理错误时，能向用户提供排查标识；
+      (3) <strong>hint 字段</strong>指引 agent 下一步行动（修改 SQL / 检查连接 / 稍后重试）；
+      (4) 底层异常详情（stack trace）记录在日志中，<strong>不返回给 agent</strong>。
+    </div>
+
+    <div class="inline-quiz">
+      <p>MCP 错误响应中的「data」字段承担什么角色？</p>
+      <input type="text" id="iq8" placeholder="简答，15字以内">
+      <button onclick="checkInline('iq8', '携带附加调试信息', 'iq8-fb')">检验</button>
+      <div class="feedback" id="iq8-fb"></div>
+    </div>
+
+    <!-- ===== 八、面试话术 ===== -->
+    <h2 id="interview">八、面试答法</h2>
+
+    <div class="callout success">
+      <strong>高频问题 1</strong>
+      "请设计一个可扩展的 Tool Use 系统"
+    </div>
+    <p><strong>STAR 答法（45秒版本）：</strong></p>
+    <p>我在设计 clickhouse-mcp-server 时，将一个生产级 Tool Use 系统拆为五个模块：第一，<strong>工具注册层</strong>基于 MCP 协议标准的 Tool 定义结构，每个工具由 name/description/inputSchema 三元组描述，JSON Schema 做静态参数校验；第二，<strong>执行引擎层</strong>使用 CompletableFuture 编排异步流程，按工具类型分配到独立的 ThreadPoolExecutor（查询池 / 写入池），实现舱壁隔离；第三，<strong>重试和超时层</strong>采用指数退避策略，对网络超时等可恢复错误自动重试，SQL 语法错误等不可恢复错误直接返回；第四，<strong>可观测性层</strong>通过 W3C traceparent 头传播链路上下文，结合 Micrometer + MDC 记录每个工具调用的耗时和结果；第五，<strong>错误处理层</strong>统一返回中文友好错误消息，附带 traceId 供后续排查。这个架构支持<strong>热插拔新工具</strong>：只需实现 ToolExecutor 接口 + 注册 JSON Schema，零改动执行引擎。</p>
+
+    <div class="callout success">
+      <strong>高频问题 2</strong>
+      "MCP 协议与 OpenAI Function Calling 有什么区别？"
+    </div>
+    <p><strong>标准答法（40秒版本）：</strong></p>
+    <p>MCP 和 OpenAI Function Calling 解决相同的问题——让 AI 模型调用外部工具，但设计哲学和协议层次不同。第一，<strong>协议边界</strong>：OpenAI Function Calling 只是一个 API 参数（functions 数组），而 MCP 是完整协议栈（Transport/Session/Protocol/Application 四层），定义了连接握手、能力协商、生命周期管理；第二，<strong>传输层</strong>：Function Calling 只能走 HTTP/WebSocket，MCP 还支持 stdio（子进程管道），适合本地桌面应用和 IDE 插件；第三，<strong>能力的广度</strong>：MCP 定义了 Tool（动作）、Resource（数据）、Prompt（模板）三种能力模型，Function Calling 只有 Function 一个维度；第四，<strong>去厂商绑定</strong>：MCP 是 Anthropic 开源的开放协议，任何 LLM（Claude/GPT/Gemini）都可实现兼容，而 Function Calling 是 OpenAI 专属。我选择 MCP 构建 clickhouse-mcp-server 的原因是它天生的<strong>可观测性和协议规范</strong>，未来可以无缝接入不同的 AI agent 客户端。</p>
+
+    <div class="callout success">
+      <strong>高频问题 3</strong>
+      "如何保证 Agent Tool 的幂等性和事务性？"
+    </div>
+    <p><strong>标准答法（35秒版本）：</strong></p>
+    <p>Tool 幂等性是 Agent 系统中极易被忽略但极为重要的设计点。对于 clickhouse-mcp-server 的三个工具，我采取不同策略：第一，对于 <strong>query 工具</strong>，它是天然幂等的（SELECT 语句可重复执行），问题不在幂等而在过期性——我在返回数据时附带 ClickHouse 的系统时间戳，让 agent 判断数据是否新鲜；第二，对于 <strong>schema 工具</strong>，同样天然幂等，我加了 30 秒本地缓存，防止 agent 在同一个对话中频繁调用；第三，对于 <strong>batch_insert 工具</strong>，它是非幂等的。我的方案是引入<strong>请求去重 ID（idempotency key）</strong>：agent 在调用时传入 idempotencyKey，server 在 Redis 中缓存已处理的 key 及其结果，重放时直接返回已处理结果。这本质上是分布式事务中的"至多一次"语义保证。</p>
+
+    <!-- ===== 九、章末 Quiz ===== -->
+    <div class="quiz-section" id="quiz">
+      <h2>检索练习</h2>
+      <p style="font-family:sans-serif;font-size:13px;color:#64748b;margin-bottom:20px">不看上方内容，凭记忆回答。答错不扣分，只是帮你定位记忆空白。</p>
+
+      <div class="quiz-q" id="q1">
+        <p>1. MCP 协议的四层架构从底层到顶层依次是？</p>
+        <div class="quiz-options">
+          <button class="quiz-opt" onclick="answer('q1','A')">A. Transport - Session - Protocol - Application</button>
+          <button class="quiz-opt" onclick="answer('q1','B')">B. Protocol - Transport - Session - Application</button>
+          <button class="quiz-opt" onclick="answer('q1','C')">C. Transport - Protocol - Session - Application</button>
+          <button class="quiz-opt" onclick="answer('q1','D')">D. Session - Transport - Protocol - Application</button>
+        </div>
+        <div class="quiz-feedback" id="q1-fb">Transport（如何连接）-> Session（如何握手）-> Protocol（如何说话）-> Application（能做什么）。这是 MCP 标准协议分层。</div>
+      </div>
+
+      <div class="quiz-q" id="q2">
+        <p>2. 以下哪个场景应该使用 MCP Resource 而不是 Tool？</p>
+        <div class="quiz-options">
+          <button class="quiz-opt" onclick="answer('q2','A')">A. 执行一条 INSERT 语句写入数据</button>
+          <button class="quiz-opt" onclick="answer('q2','B')">B. 读取 ClickHouse 表的 schema 信息</button>
+          <button class="quiz-opt" onclick="answer('q2','C')">C. 查询某个表的聚合结果</button>
+          <button class="quiz-opt" onclick="answer('q2','D')">D. 批量导入 CSV 文件到数据库</button>
+        </div>
+        <div class="quiz-feedback" id="q2-fb">Resource 用于读取数据（文档、schema、配置），Tool 用于执行动作（查询、写入、分析）。读取 schema 信息天然适合 Resource 模型。但对于 clickhouse-mcp-server，我们用 Tool 封装也有道理——因为需要参数化查询（指定 database/table）。</div>
+      </div>
+
+      <div class="quiz-q" id="q3">
+        <p>3. JSON Schema 参数校验中，以下哪项不是最佳实践？</p>
+        <div class="quiz-options">
+          <button class="quiz-opt" onclick="answer('q3','A')">A. 用 enum 限制可选值范围</button>
+          <button class="quiz-opt" onclick="answer('q3','B')">B. 用 minimum / maximum 做数值范围校验</button>
+          <button class="quiz-opt" onclick="answer('q3','C')">C. 所有参数都设为 required 以防 agent 漏传</button>
+          <button class="quiz-opt" onclick="answer('q3','D')">D. 用 description 字段详细说明何时使用该工具</button>
+        </div>
+        <div class="quiz-feedback" id="q3-fb">required 字段越少越好。AI agent 的猜测准确度有限，过多的必需参数会让 agent 频繁猜错。应该给每个参数合理的 default 值，只在绝对必要的字段上设 required。</div>
+      </div>
+
+      <div class="quiz-q" id="q4">
+        <p>4. 在 clickhouse-mcp-server 的执行引擎中，为什么要区分查询和写入两个线程池？</p>
+        <div class="quiz-options">
+          <button class="quiz-opt" onclick="answer('q4','A')">A. Java 不支持单个线程池同时处理不同类型任务</button>
+          <button class="quiz-opt" onclick="answer('q4','B')">B. 查询是 IO 密集型，写入是 CPU 密集型，混在一起可能导致写入饿死</button>
+          <button class="quiz-opt" onclick="answer('q4','C')">C. CompletableFuture 必须指定专用线程池</button>
+          <button class="quiz-opt" onclick="answer('q4','D')">D. ClickHouse JDBC 驱动要求连接在不同线程池中使用</button>
+        </div>
+        <div class="quiz-feedback" id="q4-fb">这是舱壁隔离 (Bulkhead) 模式。查询是 IO 密集型（等待 ClickHouse 返回），写入是 CPU 密集型（序列化 + 分批）。混合时慢查询会占满线程，写入任务饿死。两个独立的 ThreadPoolExecutor + 不同的拒绝策略解决了这个问题。</div>
+      </div>
+
+      <div class="quiz-q" id="q5">
+        <p>5. 在 MCP server 中集成链路追踪，trace 上下文通过什么机制传播到 ClickHouse？</p>
+        <div class="quiz-options">
+          <button class="quiz-opt" onclick="answer('q5','A')">A. 在 SQL 字符串中嵌入 trace_id 作为注释</button>
+          <button class="quiz-opt" onclick="answer('q5','B')">B. W3C traceparent HTTP 头 + OpenTelemetry 集成</button>
+          <button class="quiz-opt" onclick="answer('q5','C')">C. 在 ClickHouse 表里建一个 tracing 列</button>
+          <button class="quiz-opt" onclick="answer('q5','D')">D. 在 JDBC 连接字符串 URL 参数中传递</button>
+        </div>
+        <div class="quiz-feedback" id="q5-fb">MCP 协议使用 W3C traceparent 头传播 trace 上下文。SSE Transport 的 HTTP 请求头中携带 traceparent，MCP Session 层提取后注入 ToolContext，执行引擎通过 OpenTelemetry JDBC 集成（或手动注入）将 trace 传播到 ClickHouse 侧。</div>
+      </div>
+
+      <div id="quiz-total-score" class="quiz-score"></div>
+    </div>
+
+    <!-- ===== 课后首要行动 ===== -->
+    <h2>课后首要行动（按重要性排序）</h2>
+    <ol style="padding-left:20px;font-size:15px;line-height:2">
+      <li><strong>画架构图</strong>：在纸上画出 clickhouse-mcp-server 的完整架构图（Transport -> Session -> Protocol -> Application -> ToolExecutor -> ClickHouse），标注每个工具的执行流程</li>
+      <li><strong>实现 ToolSchemaValidator</strong>：用 NetworkNT JSON Schema 或 Everit JSON Schema 库实现一个工具参数校验器，集成到你的 MCP server 中</li>
+      <li><strong>实现 RetryableExecutor</strong>：基于 <code>exceptionallyCompose</code> 实现带指数退避的重试包装器，区分可重试和不可重试异常</li>
+      <li><strong>增加 batch_insert 工具</strong>：复用 <a href="0020-batch-import-optimizer.html">Lesson 20</a> 的 BatchImportExecutor，将其封装为 MCP ToolExecutor 实现</li>
+      <li><strong>集成 trace 传播</strong>：在 MCP SSE Transport 层提取 traceparent 头，设置 MDC 上下文（参考 <a href="0019-ttl-mdc-threadpool.html">L19</a> 的 TTL MDC 包装器），验证完整链路的 trace 串联</li>
+    </ol>
+
+    <!-- ===== Primary Sources ===== -->
+    <h2>Primary Sources</h2>
+
+    <div class="primary-source">
+      <div class="label">官方规范（必读）</div>
+      <div class="title"><a href="https://spec.modelcontextprotocol.io/" target="_blank">MCP Protocol Specification</a></div>
+      <div class="desc">MCP 协议的官方规范文档，深入定义 Transport/Session/Protocol/Application 四层细节。读完本课后强烈建议阅读（60分钟）。</div>
+    </div>
+
+    <div class="primary-source">
+      <div class="label">参考实现</div>
+      <div class="title"><a href="https://github.com/modelcontextprotocol/servers" target="_blank">MCP Official Servers (Reference Implementation)</a></div>
+      <div class="desc">Anthropic 官方维护的 MCP server 合集，包含 filesystem、github、postgres、sqlite 等参考实现。是学习工具设计和 JSON Schema 定义的最佳范本。</div>
+    </div>
+
+    <div class="primary-source">
+      <div class="label">Java SDK</div>
+      <div class="title"><a href="https://docs.spring.io/spring-ai/reference/api/mcp-server.html" target="_blank">Spring AI MCP Server Support</a></div>
+      <div class="desc">Spring AI 对 MCP Server 的官方实现（2025 年 GA）。支持 auto-configuration、SSE transport、tool registration via Spring Beans。</div>
+    </div>
+
+    <div class="primary-source">
+      <div class="label">Go SDK</div>
+      <div class="title"><a href="https://github.com/mark3labs/mcp-go" target="_blank">mcp-go — Go MCP SDK</a></div>
+      <div class="desc">Go 语言的 MCP 协议 SDK。如果你在 <a href="0002-mcp-protocol-go.html">L02</a> 选择了 Go 路线，这是你的首选依赖。</div>
+    </div>
+
+    <div class="primary-source">
+      <div class="label">可观测性</div>
+      <div class="title"><a href="https://opentelemetry.io/docs/instrumentation/java/" target="_blank">OpenTelemetry Java Instrumentation</a></div>
+      <div class="desc">OpenTelemetry Java SDK 官方文档。用于实现 MCP server 的 trace 传播和指标暴露。</div>
+    </div>
+
+    <div class="ask-me">
+      <strong>有问题？直接问你的老师。</strong><br>
+      对 MCP 协议四层模型理解不够清晰？对 retry strategy 的指数退避实现有疑问？想了解如何将 spring-ai MCP server 部署到生产环境？在对话框里问，马上解答。
+    </div>
+
+    <div class="nav-links">
+      <a href="0020-batch-import-optimizer.html">Lesson 20: Batch Import Optimizer</a>
+      <span style="color:#94a3b8">Lesson 22 coming next</span>
+    </div>
+  </main>
+</div>
+
+<script>
+  const answers = { q1:'A', q2:'B', q3:'C', q4:'B', q5:'B' };
+  const scores = {};
+
+  function answer(qid, choice) {
+    const opts = document.querySelectorAll(`#${qid} .quiz-opt`);
+    opts.forEach(o => o.disabled = true);
+    const selected = opts[['A','B','C','D'].indexOf(choice)];
+    const correct = answers[qid];
+    if (choice === correct) {
+      selected.classList.add('correct');
+      scores[qid] = 1;
+    } else {
+      selected.classList.add('wrong');
+      opts[['A','B','C','D'].indexOf(correct)].classList.add('correct');
+      scores[qid] = 0;
+    }
+    const fb = document.getElementById(`${qid}-fb`);
+    fb.style.display = 'block';
+    updateTotal();
+  }
+
+  function updateTotal() {
+    const total = Object.keys(answers).length;
+    const got = Object.values(scores).reduce((a,b)=>a+b, 0);
+    if (Object.keys(scores).length === total) {
+      const el = document.getElementById('quiz-total-score');
+      el.style.display = 'block';
+      el.textContent = `得分：${got}/${total}`;
+      el.className = 'quiz-score ' + (got >= 4 ? 'good' : 'ok');
+    }
+  }
+
+  function checkInline(inputId, expected, fbId) {
+    const val = document.getElementById(inputId).value.trim().replace(/\s+/g,'');
+    const exp = expected.replace(/\s+/g,'');
+    const fb = document.getElementById(fbId);
+    fb.style.display = 'block';
+    if (val === exp) {
+      fb.className = 'feedback ok';
+      fb.textContent = '正确';
+    } else {
+      fb.className = 'feedback bad';
+      fb.textContent = '答案：' + expected;
+    }
+  }
+</script>
+</body>
+</html>
