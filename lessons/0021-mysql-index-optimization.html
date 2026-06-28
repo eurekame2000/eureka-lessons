@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 21 — MySQL 索引优化：从 B+ 树到索引下推</title>
+  <style>
+    :root {
+      --ink: #1a1a1a;
+      --muted: #555;
+      --accent: #1a6b3c;
+      --accent2: #2563eb;
+      --bg: #fafaf8;
+      --card: #ffffff;
+      --border: #e0ddd8;
+      --code-bg: #f4f1eb;
+      --dark-code: #0f172a;
+      --success: #d4edda;
+      --success-border: #28a745;
+      --warn: #fff3cd;
+      --warn-border: #ffc107;
+      --danger: #f8d7da;
+      --danger-border: #dc3545;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Georgia', serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.7;
+    }
+    .layout { display: flex; min-height: 100vh; }
+    nav {
+      width: 220px;
+      background: #1e293b;
+      color: #94a3b8;
+      padding: 32px 0;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      flex-shrink: 0;
+    }
+    nav h3 { color: #f1f5f9; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; padding: 0 20px 12px; }
+    nav a { display: block; padding: 6px 20px; color: #94a3b8; text-decoration: none; font-size: 13px; font-family: sans-serif; }
+    nav a:hover { color: #f1f5f9; background: rgba(255,255,255,0.05); }
+    nav .nav-section { margin-bottom: 20px; }
+    main { flex: 1; max-width: 780px; padding: 56px 64px; }
+    .lesson-meta { font-family: sans-serif; font-size: 12px; color: #64748b; margin-bottom: 32px; }
+    .lesson-meta span { margin-right: 16px; }
+    h1 { font-size: 32px; font-weight: 700; margin-bottom: 8px; line-height: 1.2; }
+    h2 { font-size: 20px; font-weight: 700; margin: 40px 0 12px; padding-bottom: 6px; border-bottom: 2px solid var(--border); }
+    h3 { font-size: 16px; font-weight: 700; margin: 24px 0 8px; color: #334155; }
+    p { margin-bottom: 14px; }
+    a { color: var(--accent2); }
+    code { font-family: 'Menlo', 'Monaco', monospace; font-size: 13px; background: var(--code-bg); padding: 2px 5px; border-radius: 3px; }
+    pre {
+      background: var(--dark-code);
+      color: #e2e8f0;
+      padding: 20px 24px;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin: 16px 0;
+      font-family: 'Menlo', 'Monaco', monospace;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    pre .comment { color: #64748b; }
+    pre .keyword { color: #93c5fd; }
+    pre .string { color: #86efac; }
+    pre .func { color: #fde68a; }
+    pre .type { color: #f9a8d4; }
+    pre .number { color: #fca5a5; }
+    .callout {
+      border-left: 4px solid var(--accent);
+      background: var(--success);
+      padding: 14px 18px;
+      margin: 20px 0;
+      border-radius: 0 6px 6px 0;
+      font-size: 14px;
+    }
+    .callout.warn { border-color: var(--warn-border); background: var(--warn); }
+    .callout.danger { border-color: var(--danger-border); background: var(--danger); }
+    .callout strong { display: block; margin-bottom: 4px; font-family: sans-serif; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+    table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px; font-family: sans-serif; }
+    th { background: var(--code-bg); text-align: left; padding: 8px 12px; border-bottom: 2px solid var(--border); font-size: 12px; }
+    td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    tr:hover td { background: #eff6ff; }
+    ul, ol { margin: 12px 0; padding-left: 24px; font-size: 14px; }
+    li { margin-bottom: 8px; }
+    .compare {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin: 16px 0;
+    }
+    .compare-box { background: var(--code-bg); border-radius: 8px; padding: 14px; }
+    .compare-box h4 { font-family: sans-serif; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; color: #64748b; }
+
+    /* Quiz */
+    .quiz-section { background: var(--code-bg); border-radius: 10px; padding: 24px; margin: 32px 0; }
+    .quiz-section h2 { border: none; margin-top: 0; }
+    .quiz-q { margin-bottom: 24px; }
+    .quiz-q p { font-weight: 600; margin-bottom: 10px; font-size: 15px; }
+    .quiz-options { display: grid; gap: 8px; }
+    .quiz-opt { display: block; background: white; border: 2px solid var(--border); border-radius: 6px; padding: 10px 14px; cursor: pointer; font-size: 14px; transition: all 0.15s; text-align: left; width: 100%; font-family: sans-serif; }
+    .quiz-opt:hover:not(:disabled) { border-color: var(--accent2); background: #eff6ff; }
+    .quiz-opt.correct { border-color: #16a34a; background: #f0fdf4; color: #16a34a; font-weight: 600; }
+    .quiz-opt.wrong { border-color: #dc2626; background: #fef2f2; color: #dc2626; }
+    .quiz-opt:disabled { cursor: default; }
+    .quiz-feedback { margin-top: 8px; font-size: 13px; display: none; padding: 8px 12px; border-radius: 4px; background: white; border: 1px solid var(--border); }
+    .quiz-score { text-align: center; font-size: 18px; font-weight: 700; padding: 16px; border-radius: 8px; display: none; margin-top: 16px; font-family: sans-serif; }
+    .quiz-score.good { background: #f0fdf4; color: #16a34a; }
+    .quiz-score.ok { background: var(--warn); color: #d97706; }
+    .inline-quiz { background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 14px 18px; margin: 20px 0; }
+    .inline-quiz p { margin-bottom: 8px; font-weight: 600; font-size: 14px; }
+    .inline-quiz input { border: 2px solid var(--border); border-radius: 4px; padding: 6px 10px; font-size: 13px; font-family: monospace; width: 100%; max-width: 360px; margin-bottom: 8px; }
+    .inline-quiz button { background: var(--accent2); color: white; border: none; border-radius: 4px; padding: 6px 14px; cursor: pointer; font-size: 13px; font-family: sans-serif; }
+    .inline-quiz .feedback { font-size: 13px; margin-top: 6px; display: none; }
+    .inline-quiz .feedback.ok { color: #16a34a; }
+    .inline-quiz .feedback.bad { color: #dc2626; }
+
+    .primary-source { background: white; border: 1px solid var(--border); border-radius: 8px; padding: 18px; margin: 32px 0; font-family: sans-serif; }
+    .primary-source .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; margin-bottom: 6px; }
+    .primary-source .title { font-size: 16px; font-weight: 700; color: var(--accent2); margin-bottom: 4px; }
+    .primary-source .desc { font-size: 13px; color: #64748b; }
+
+    .nav-links { font-family: sans-serif; font-size: 13px; display: flex; gap: 16px; margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--border); }
+    .nav-links a { color: var(--accent2); }
+    .ask-me { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 14px 18px; margin: 32px 0; font-family: sans-serif; font-size: 14px; }
+    .ask-me strong { color: #0369a1; }
+
+    .tree-diagram {
+      background: var(--code-bg);
+      border-radius: 8px;
+      padding: 20px;
+      margin: 16px 0;
+      font-family: 'Menlo', 'Monaco', monospace;
+      font-size: 13px;
+      line-height: 1.8;
+    }
+    .tree-diagram .node { color: var(--accent); font-weight: 700; }
+    .tree-diagram .leaf { color: #64748b; }
+    .tree-diagram .arrow { color: var(--accent2); }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <nav>
+    <div class="nav-section">
+      <h3>本课导航</h3>
+      <a href="#bplus">一、B+ 树索引结构</a>
+      <a href="#composite">二、联合索引与最左前缀</a>
+      <a href="#covering">三、覆盖索引</a>
+      <a href="#icp">四、索引下推 (ICP)</a>
+      <a href="#explain">五、EXPLAIN 详解</a>
+      <a href="#invalid">六、索引失效场景</a>
+      <a href="#orderby">七、联合索引排序</a>
+      <a href="#practice">八、慢查询实战</a>
+      <a href="#compare">九、ClickHouse 对比</a>
+      <a href="#interview">十、面试话术</a>
+      <a href="#quiz">十一、检索练习</a>
+    </div>
+    <div class="nav-section">
+      <h3>课程系列</h3>
+      <a href="0003-jvm-gc-deep-dive.html">03 JVM GC</a>
+      <a href="0020-batch-import-optimizer.html">20 Batch Import</a>
+      <a href="0021-mysql-index-optimization.html" style="color:#f1f5f9;font-weight:700">21 MySQL 索引</a>
+    </div>
+  </nav>
+
+  <main>
+    <div class="lesson-meta">
+      <span>Lesson 21</span>
+      <span>MySQL 索引优化</span>
+      <span>~45 分钟</span>
+    </div>
+
+    <h1>MySQL 索引优化：从 B+ 树到索引下推</h1>
+    <p style="font-size:15px;color:#64748b;margin-bottom:32px">
+      你在高并发 Java 后端开发中，MySQL 慢查询是最常遇到的性能瓶颈之一。本课系统讲解 InnoDB 索引的核心机制：
+      B+ 树结构、联合索引最左前缀、覆盖索引、索引下推、EXPLAIN 分析、索引失效场景、ORDER BY 优化，
+      最后用一个慢查询实战案例串起所有知识点。学完本课，你能独立诊断和优化大多数 MySQL 慢查询问题。
+    </p>
+
+    <!-- ===== 开篇连接 ===== -->
+    <div class="callout">
+      <strong>面试连接</strong>
+      "MySQL 索引为什么用 B+ 树不用 B 树？" 和 "如何优化一条慢查询？" 是 Java 后端面试的高频题。
+      本课用 clickhouse-mcp-server 项目中可能涉及的查询场景作为实战锚点，覆盖索引结构、查询优化、EXPLAIN 分析三大模块。
+      答出这节课的索引机制，面试官会认为你真正理解 MySQL 性能优化的底层原理。
+    </div>
+
+    <!-- ===== 前置检查 ===== -->
+    <h2 id="prereqs">前置检查</h2>
+    <p>下面的两个问题验证你对 InnoDB 存储引擎和 SQL 基础的掌握。如果答不上来，先回顾相关知识。</p>
+
+    <div class="inline-quiz">
+      <p>1. InnoDB 存储引擎的默认隔离级别是什么？（回顾数据库事务知识）</p>
+      <input type="text" id="iq1" placeholder="如 REPEATABLE READ / READ COMMITTED">
+      <button onclick="checkInline('iq1', 'REPEATABLE READ', 'iq1-fb')">检验</button>
+      <div class="feedback" id="iq1-fb"></div>
+    </div>
+
+    <div class="inline-quiz">
+      <p>2. 一条 SQL 查询的执行顺序是什么？（回顾 SQL 执行流程）</p>
+      <input type="text" id="iq2" placeholder="如 FROM → WHERE → GROUP BY → HAVING → SELECT → ORDER BY → LIMIT">
+      <button onclick="checkInline('iq2', 'FROM → WHERE → GROUP BY → HAVING → SELECT → ORDER BY → LIMIT', 'iq2-fb')">检验</button>
+      <div class="feedback" id="iq2-fb"></div>
+    </div>
+
+    <!-- ===== 一、B+ 树索引结构 ===== -->
+    <h2 id="bplus">一、B+ 树索引结构：为什么 InnoDB 用 B+ 树不用 B 树/Hash</h2>
+
+    <h3>B+ 树的结构特点</h3>
+    <p>B+ 树是一种平衡多路搜索树，InnoDB 的聚簇索引（主键索引）使用 B+ 树实现。其核心特点：</p>
+    <ul>
+      <li><strong>非叶子节点</strong>只存储键值（key）和指针，不存储数据</li>
+      <li><strong>叶子节点</strong>存储完整的行数据（聚簇索引）或主键值（二级索引）</li>
+      <li><strong>叶子节点之间通过双向链表连接</strong>，支持范围查询的高效遍历</li>
+      <li><strong>所有叶子节点在同一层</strong>，保证查询性能稳定（O(log n)）</li>
+    </ul>
+
+    <div class="tree-diagram">
+      <pre style="background:transparent;padding:0;margin:0">
+<span class="node">[B+ 树结构示意]</span>
+
+                    <span class="node">[18, 40]</span>        ← 根节点（非叶子），只存 key
+                   /          \
+                  /            \
+      <span class="node">[5, 10, 15]</span>      <span class="node">[25, 30, 35]</span>  ← 内部节点（非叶子）
+       /    |    \        /    |    \
+      /     |     \      /     |     \
+<span class="leaf">[1,2,5]</span> <span class="leaf">[8,10]</span> <span class="leaf">[12,15]</span> <span class="leaf">[20,25]</span> <span class="leaf">[28,30]</span> <span class="leaf">[32,35,40]</span>  ← 叶子节点，存完整数据
+      <span class="arrow">←prev────prev────prev────prev────prev────prev→</span>        双向链表连接
+      <span class="arrow">→next────next────next────next────next────next→</span>
+      </pre>
+    </div>
+
+    <h3>为什么不用 B 树？</h3>
+    <p>B 树和 B+ 树的核心区别在于<strong>数据存储位置</strong>和<strong>叶子节点连接</strong>：</p>
+
+    <table>
+      <tr><th>对比维度</th><th>B 树</th><th>B+ 树（InnoDB 选择）</th></tr>
+      <tr><td>数据存储</td><td>所有节点都存储数据</td><td>只有叶子节点存储数据</td></tr>
+      <tr><td>叶子节点</td><td>无连接</td><td>双向链表连接</td></tr>
+      <tr><td>范围查询</td><td>需要从根节点多次遍历</td><td>叶子节点链表遍历，效率高</td></tr>
+      <tr><td>磁盘 IO</td><td>非叶子节点占空间大，单次 IO 读取的 key 少</td><td>非叶子节点只存 key，单次 IO 读取更多 key</td></tr>
+      <tr><td>查询稳定性</td><td>数据在不同层，查询路径长度不同</td><td>所有查询都到叶子节点，路径长度一致</td></tr>
+    </table>
+
+    <div class="callout">
+      <strong>面试要点</strong>
+      InnoDB 选择 B+ 树的核心原因：(1) <strong>磁盘页利用率更高</strong>——非叶子节点只存 key，一个 16KB 页可以存更多 key，树高更低（通常 3-4 层可存千万级数据）；(2) <strong>范围查询更高效</strong>——叶子节点链表让 WHERE id BETWEEN 10 AND 100 只需定位到 id=10 的叶子节点，然后向右遍历。
+    </div>
+
+    <h3>为什么不用 Hash 索引？</h3>
+    <p>Hash 索引虽然等值查询是 O(1)，但有几个致命缺陷：</p>
+    <ul>
+      <li><strong>不支持范围查询</strong>：WHERE id > 10 无法使用 Hash 索引</li>
+      <li><strong>不支持排序</strong>：Hash 索引的数据是无序的</li>
+      <li><strong>不支持部分索引匹配</strong>：联合索引 (a,b) 无法只使用 a 查询</li>
+      <li><strong>存在哈希冲突</strong>：不同的 key 可能映射到同一个桶</li>
+    </ul>
+
+    <p>Memory 引擎支持 Hash 索引，但 InnoDB 的 adaptive hash index 是引擎自动管理的，用户无法创建 Hash 索引。</p>
+
+    <div class="inline-quiz">
+      <p>B+ 树非叶子节点只存储 key 的好处是什么？</p>
+      <input type="text" id="iq3" placeholder="简答，20字以内">
+      <button onclick="checkInline('iq3', '一个磁盘页存更多key，树高更低', 'iq3-fb')">检验</button>
+      <div class="feedback" id="iq3-fb"></div>
+    </div>
+
+    <!-- ===== 二、联合索引与最左前缀 ===== -->
+    <h2 id="composite">二、联合索引与最左前缀原则</h2>
+
+    <h3>联合索引的结构</h3>
+    <p>联合索引 (a, b, c) 在 B+ 树中的排序规则是：先按 a 排序，a 相同再按 b 排序，b 相同再按 c 排序。</p>
+
+    <pre>
+<span class="comment">-- 创建联合索引</span>
+CREATE INDEX idx_abc ON t(a, b, c);
+
+<span class="comment">-- B+ 树中数据的排序方式</span>
+(a=1, b=1, c=1)
+(a=1, b=1, c=2)
+(a=1, b=2, c=1)  <span class="comment">← b 变化了</span>
+(a=1, b=2, c=3)
+(a=2, b=1, c=1)  <span class="comment">← a 变化了，b 和 c 重新排序</span>
+(a=2, b=1, c=2)
+(a=2, b=3, c=1)
+
+<span class="comment">-- 查询能命中索引的组合</span>
+WHERE a = 1                           <span class="comment">-- 命中：使用最左列</span>
+WHERE a = 1 AND b = 2                <span class="comment">-- 命中：使用 a + b</span>
+WHERE a = 1 AND b = 2 AND c = 3      <span class="comment">-- 命中：使用 a + b + c</span>
+WHERE a = 1 AND c = 3                <span class="comment">-- 部分命中：只用到 a</span>
+WHERE b = 2                          <span class="comment">-- 不命中：跳过了 a</span>
+WHERE b = 2 AND c = 3                <span class="comment">-- 不命中：跳过了 a</span>
+    </pre>
+
+    <h3>最左前缀原则</h3>
+    <p>最左前缀原则是指：查询条件必须从联合索引的<strong>最左列开始</strong>，且<strong>不能跳过中间的列</strong>。</p>
+
+    <table>
+      <tr><th>查询条件</th><th>是否命中索引 (a,b,c)</th><th>原因</th></tr>
+      <tr><td>WHERE a = 1</td><td>命中（用 a）</td><td>从最左列开始</td></tr>
+      <tr><td>WHERE a = 1 AND b = 2</td><td>命中（用 a,b）</td><td>连续最左前缀</td></tr>
+      <tr><td>WHERE a = 1 AND b = 2 AND c = 3</td><td>命中（用 a,b,c）</td><td>完整前缀</td></tr>
+      <tr><td>WHERE a = 1 AND c = 3</td><td>部分命中（只用 a）</td><td>跳过了 b，c 无法使用索引</td></tr>
+      <tr><td>WHERE b = 2</td><td>不命中</td><td>没有从最左列 a 开始</td></tr>
+      <tr><td>WHERE b = 2 AND c = 3</td><td>不命中</td><td>跳过了 a</td></tr>
+      <tr><td>WHERE a > 1 AND b = 2</td><td>部分命中（只用 a）</td><td>a 用范围查询，b 无法使用索引</td></tr>
+      <tr><td>WHERE a = 1 AND b > 2 AND c = 3</td><td>部分命中（用 a,b）</td><td>b 用范围查询，c 无法使用索引</td></tr>
+    </table>
+
+    <div class="callout warn">
+      <strong>重要细节</strong>
+      范围查询（>、<、>=、<=、BETWEEN、LIKE 'xxx%'）会使后续的索引列失效。
+      原因是：范围查询在 B+ 树中定位到一个区间后，区间内 b 的值不是有序的（因为排序是先按 a，再按 b）。
+    </div>
+
+    <div class="inline-quiz">
+      <p>对于索引 (a, b, c)，WHERE a = 1 AND c = 3 能用到哪些索引列？</p>
+      <input type="text" id="iq4" placeholder="简答，如 a / a,b / a,b,c">
+      <button onclick="checkInline('iq4', 'a', 'iq4-fb')">检验</button>
+      <div class="feedback" id="iq4-fb"></div>
+    </div>
+
+    <!-- ===== 三、覆盖索引 ===== -->
+    <h2 id="covering">三、覆盖索引：Using index，避免回表</h2>
+
+    <h3>什么是回表？</h3>
+    <p>InnoDB 有两类索引：</p>
+    <ul>
+      <li><strong>聚簇索引（主键索引）</strong>：叶子节点存储完整的行数据</li>
+      <li><strong>二级索引（普通索引）</strong>：叶子节点存储索引列的值 + 主键值</li>
+    </ul>
+
+    <p>当使用二级索引查询时，如果查询列不在索引中，InnoDB 需要：</p>
+    <ol>
+      <li>通过二级索引找到满足条件的主键值</li>
+      <li>用主键值回表到聚簇索引中查找完整的行数据</li>
+    </ol>
+
+    <p>这个"回到聚簇索引查数据"的过程叫<strong>回表</strong>，会产生额外的磁盘 IO。</p>
+
+    <h3>覆盖索引（Covering Index）</h3>
+    <p>如果查询的<strong>所有列</strong>都包含在索引中，InnoDB 可以直接从索引中返回结果，不需要回表。这就是覆盖索引。</p>
+
+    <pre>
+<span class="comment">-- 表结构</span>
+CREATE TABLE orders (
+    id INT PRIMARY KEY,
+    user_id INT,
+    product_id INT,
+    amount DECIMAL(10,2),
+    created_at DATETIME,
+    INDEX idx_user_product (user_id, product_id)
+);
+
+<span class="comment">-- 需要回表：SELECT * 包含 amount 和 created_at，不在索引中</span>
+EXPLAIN SELECT * FROM orders WHERE user_id = 100;
+<span class="comment">-- Extra: Using where（需要回表）</span>
+
+<span class="comment">-- 覆盖索引：只查询索引列 user_id 和 product_id</span>
+EXPLAIN SELECT user_id, product_id FROM orders WHERE user_id = 100;
+<span class="comment">-- Extra: Using index（覆盖索引，不需要回表）</span>
+
+<span class="comment">-- 扩展索引实现覆盖索引</span>
+ALTER TABLE orders DROP INDEX idx_user_product;
+CREATE INDEX idx_user_product_amount ON orders(user_id, product_id, amount);
+
+EXPLAIN SELECT user_id, product_id, amount FROM orders WHERE user_id = 100;
+<span class="comment">-- Extra: Using index（现在 amount 也在索引中了）</span>
+    </pre>
+
+    <div class="callout success">
+      <strong>优化技巧</strong>
+      如果查询只需要少量字段，且这些字段可以加入索引实现覆盖索引，那么扩展索引列是值得的。
+      覆盖索引避免了回表，性能提升显著（尤其是磁盘 IO 密集型场景）。
+      但要注意：索引列越多，索引占用的空间越大，写入时的维护成本也越高。需要在查询性能和写入性能之间权衡。
+    </div>
+
+    <div class="inline-quiz">
+      <p>覆盖索引的好处是什么？</p>
+      <input type="text" id="iq5" placeholder="简答，15字以内">
+      <button onclick="checkInline('iq5', '避免回表，减少磁盘IO', 'iq5-fb')">检验</button>
+      <div class="feedback" id="iq5-fb"></div>
+    </div>
+
+    <!-- ===== 四、索引下推 (ICP) ===== -->
+    <h2 id="icp">四、索引下推（ICP，Index Condition Pushdown，MySQL 5.6+）</h2>
+
+    <h3>ICP 解决的问题</h3>
+    <p>在没有 ICP 之前，使用联合索引查询时，存储引擎层只根据<strong>索引的最左前缀</strong>过滤数据，然后将所有满足条件的行返回给 Server 层，Server 层再应用 WHERE 中的其他条件。</p>
+
+    <p>有了 ICP 之后，存储引擎层可以在<strong>遍历索引的过程中</strong>就应用 WHERE 中的条件，减少回表次数。</p>
+
+    <pre>
+<span class="comment">-- 示例表</span>
+CREATE TABLE employees (
+    id INT PRIMARY KEY,
+    last_name VARCHAR(50),
+    first_name VARCHAR(50),
+    birth_date DATE,
+    INDEX idx_last_first (last_name, first_name)
+);
+
+<span class="comment">-- 查询：查找 last_name 以 'A' 开头，且 first_name 以 'B' 开头的员工</span>
+EXPLAIN SELECT * FROM employees
+WHERE last_name LIKE 'A%' AND first_name LIKE 'B%';
+
+<span class="comment">-- 没有 ICP（MySQL 5.5 及之前）：</span>
+<span class="comment">-- 1. 存储引擎用 last_name LIKE 'A%' 找到所有 last_name 以 A 开头的索引记录</span>
+<span class="comment">-- 2. 回表读取完整行数据</span>
+<span class="comment">-- 3. Server 层再过滤 first_name LIKE 'B%'</span>
+<span class="comment">-- Extra: Using where</span>
+
+<span class="comment">-- 有 ICP（MySQL 5.6+）：</span>
+<span class="comment">-- 1. 存储引擎用 last_name LIKE 'A%' 定位索引范围</span>
+<span class="comment">-- 2. 在遍历索引时，同时检查 first_name LIKE 'B%'</span>
+<span class="comment">-- 3. 只有同时满足两个条件的索引记录才回表</span>
+<span class="comment">-- Extra: Using index condition（ICP 生效）</span>
+
+<span class="comment">-- 查看 ICP 是否开启</span>
+SHOW VARIABLES LIKE 'optimizer_switch';
+<span class="comment">-- 应该包含 index_condition_pushdown=on</span>
+
+<span class="comment">-- 临时关闭 ICP（用于对比）</span>
+SET optimizer_switch = 'index_condition_pushdown=off';
+    </pre>
+
+    <h3>ICP 的生效条件</h3>
+    <ul>
+      <li>查询使用<strong>联合索引</strong></li>
+      <li>WHERE 条件中，<strong>索引的后续列</strong>有查询条件（且这些条件不能用于索引查找，只能用于过滤）</li>
+      <li>查询需要<strong>回表</strong>（如果是覆盖索引，不需要回表，ICP 无意义）</li>
+    </ul>
+
+    <div class="callout">
+      <strong>面试要点</strong>
+      ICP 的全称是 Index Condition Pushdown，它是 MySQL 5.6 引入的优化。
+      核心思想是：将 WHERE 条件中涉及索引列的判断，从 Server 层"下推"到存储引擎层，在索引遍历阶段就过滤掉不满足条件的记录，减少回表次数。
+      ICP 对于联合索引的范围查询场景特别有效。
+    </div>
+
+    <div class="inline-quiz">
+      <p>ICP 将条件判断从哪个层下推到哪个层？</p>
+      <input type="text" id="iq6" placeholder="简答，如 Server → 存储引擎">
+      <button onclick="checkInline('iq6', 'Server→存储引擎', 'iq6-fb')">检验</button>
+      <div class="feedback" id="iq6-fb"></div>
+    </div>
+
+    <!-- ===== 五、EXPLAIN 详解 ===== -->
+    <h2 id="explain">五、EXPLAIN 各字段含义</h2>
+
+    <h3>基本用法</h3>
+    <pre>
+<span class="comment">-- 分析一条查询</span>
+EXPLAIN SELECT * FROM orders WHERE user_id = 100 AND amount > 50;
+
+<span class="comment">-- 格式化输出（MySQL 8.0+）</span>
+EXPLAIN FORMAT=JSON SELECT * FROM orders WHERE user_id = 100;
+    </pre>
+
+    <h3>核心字段解读</h3>
+
+    <h4>type（访问类型，重要）</h4>
+    <table>
+      <tr><th>type 值</th><th>含义</th><th>性能</th></tr>
+      <tr><td>system / const</td><td>主键或唯一索引等值查询，最多返回一行</td><td>最好</td></tr>
+      <tr><td>eq_ref</td><td>主键或唯一索引连接查询，每行只匹配一行</td><td>很好</td></tr>
+      <tr><td>ref</td><td>普通索引等值查询，可能返回多行</td><td>良好</td></tr>
+      <tr><td>range</td><td>索引范围查询（BETWEEN、IN、>、< 等）</td><td>一般</td></tr>
+      <tr><td>index</td><td>全索引扫描（扫描整个索引树）</td><td>较差</td></tr>
+      <tr><td>ALL</td><td>全表扫描</td><td>最差</td></tr>
+    </table>
+
+    <div class="callout warn">
+      <strong>面试高频</strong>
+      type 的性能排序：const > eq_ref > ref > range > index > ALL。
+      面试时常问："什么时候会出现 ALL？" 答：没有合适的索引、或查询条件无法使用索引时。
+      优化目标：至少达到 range，理想是 ref 或 const。
+    </div>
+
+    <h4>Extra（额外信息，重要）</h4>
+    <table>
+      <tr><th>Extra 值</th><th>含义</th></tr>
+      <tr><td>Using index</td><td>覆盖索引，不需要回表</td></tr>
+      <tr><td>Using index condition</td><td>使用了索引下推（ICP）</td></tr>
+      <tr><td>Using where</td><td>Server 层需要过滤（可能有回表）</td></tr>
+      <tr><td>Using filesort</td><td>需要额外的排序步骤（无法利用索引排序）</td></tr>
+      <tr><td>Using temporary</td><td>需要临时表（GROUP BY 无索引、UNION 等）</td></tr>
+      <tr><td>Using join buffer</td><td>连接查询使用了 join buffer，可能是索引缺失</td></tr>
+    </table>
+
+    <h4>其他重要字段</h4>
+    <ul>
+      <li><strong>key</strong>：实际使用的索引名</li>
+      <li><strong>rows</strong>：估计需要扫描的行数（越小越好）</li>
+      <li><strong>filtered</strong>：表示存储引擎返回的数据在 Server 层过滤后，剩下多少满足查询条件的比例</li>
+    </ul>
+
+    <div class="inline-quiz">
+      <p>EXPLAIN 的 type 字段中，range 和 index 哪个性能更好？</p>
+      <input type="text" id="iq7" placeholder="简答，如 range / index">
+      <button onclick="checkInline('iq7', 'range', 'iq7-fb')">检验</button>
+      <div class="feedback" id="iq7-fb"></div>
+    </div>
+
+    <!-- ===== 六、索引失效场景 ===== -->
+    <h2 id="invalid">六、索引失效 7 大场景</h2>
+
+    <p>即使创建了索引，某些写法也会导致索引失效，变成全表扫描。以下是 7 大常见场景：</p>
+
+    <h3>1. 对索引列使用函数或计算</h3>
+    <pre>
+<span class="comment">-- 索引失效：对索引列使用函数</span>
+EXPLAIN SELECT * FROM orders WHERE YEAR(created_at) = 2024;
+<span class="comment">-- 原因：索引存的是 created_at 的原始值，YEAR() 函数改变了它</span>
+
+<span class="comment">-- 修复：改写为范围查询</span>
+EXPLAIN SELECT * FROM orders
+WHERE created_at >= '2024-01-01' AND created_at < '2025-01-01';
+
+<span class="comment">-- 索引失效：对索引列进行计算</span>
+EXPLAIN SELECT * FROM products WHERE price * 1.1 > 100;
+<span class="comment">-- 原因：price * 1.1 不是索引中的原始值</span>
+
+<span class="comment">-- 修复：将计算移到等号右边</span>
+EXPLAIN SELECT * FROM products WHERE price > 100 / 1.1;
+    </pre>
+
+    <h3>2. 隐式类型转换</h3>
+    <pre>
+<span class="comment">-- 假设 phone 是 VARCHAR 类型，有索引</span>
+CREATE INDEX idx_phone ON users(phone);
+
+<span class="comment">-- 索引失效：字符串列用数字查询，触发隐式转换</span>
+EXPLAIN SELECT * FROM users WHERE phone = 13800138000;
+<span class="comment">-- 原因：MySQL 会把 phone 列的值转成数字再比较</span>
+
+<span class="comment">-- 修复：用字符串查询</span>
+EXPLAIN SELECT * FROM users WHERE phone = '13800138000';
+    </pre>
+
+    <h3>3. LIKE 左模糊</h3>
+    <pre>
+<span class="comment">-- 索引失效：左模糊</span>
+EXPLAIN SELECT * FROM users WHERE name LIKE '%明';
+<span class="comment">-- 原因：B+ 树从左到右排序，'%明' 无法利用排序</span>
+
+<span class="comment">-- 索引生效：右模糊</span>
+EXPLAIN SELECT * FROM users WHERE name LIKE '张%';
+<span class="comment">-- 原因：'张%' 可以利用 B+ 树的有序性定位范围</span>
+    </pre>
+
+    <h3>4. OR 连接非索引列</h3>
+    <pre>
+<span class="comment">-- 假设只有 user_id 有索引</span>
+EXPLAIN SELECT * FROM orders WHERE user_id = 100 OR amount > 100;
+<span class="comment">-- 索引失效：OR 的 amount > 100 部分无法使用索引</span>
+<span class="comment">-- MySQL 优化器可能选择全表扫描</span>
+
+<span class="comment">-- 修复：为 amount 也创建索引，或改写为 UNION</span>
+EXPLAIN SELECT * FROM orders WHERE user_id = 100
+UNION ALL
+SELECT * FROM orders WHERE amount > 100;
+    </pre>
+
+    <h3>5. 使用 != 或 &lt;&gt;</h3>
+    <pre>
+<span class="comment">-- 索引可能失效</span>
+EXPLAIN SELECT * FROM users WHERE status != 1;
+<span class="comment">-- 原因：如果 status != 1 的结果占大多数，优化器可能选择全表扫描</span>
+<span class="comment">-- （因为回表的成本可能比全表扫描还高）</span>
+    </pre>
+
+    <h3>6. 使用 NOT IN</h3>
+    <pre>
+<span class="comment">-- 索引可能失效</span>
+EXPLAIN SELECT * FROM users WHERE id NOT IN (1, 2, 3);
+<span class="comment">-- 原因：NOT IN 通常无法利用索引的有序性</span>
+<span class="comment">-- 修复：改用 NOT EXISTS 或 LEFT JOIN ... WHERE id IS NULL</span>
+    </pre>
+
+    <h3>7. IS NULL / IS NOT NULL（取决于数据分布）</h3>
+    <pre>
+<span class="comment">-- 如果 NULL 值很少，索引可能生效</span>
+EXPLAIN SELECT * FROM users WHERE email IS NULL;
+
+<span class="comment">-- 如果 NULL 值很多，索引可能失效</span>
+EXPLAIN SELECT * FROM users WHERE email IS NOT NULL;
+<span class="comment">-- 原因：优化器会根据数据分布选择成本最低的执行计划</span>
+    </pre>
+
+    <div class="callout danger">
+      <strong>口诀记忆</strong>
+      索引失效 7 字诀：<strong>函计隐 OR 不 NOT</strong>
+      （函数/计算/隐式转换/OR/!=/左模糊/NOT IN）
+    </div>
+
+    <div class="inline-quiz">
+      <p>LIKE '张%' 和 LIKE '%明' 哪个能用索引？</p>
+      <input type="text" id="iq8" placeholder="简答，如 前者 / 后者 / 都能 / 都不能">
+      <button onclick="checkInline('iq8', '前者', 'iq8-fb')">检验</button>
+      <div class="feedback" id="iq8-fb"></div>
+    </div>
+
+    <!-- ===== 七、联合索引排序 ===== -->
+    <h2 id="orderby">七、联合索引排序：ORDER BY + LIMIT 优化</h2>
+
+    <h3>ORDER BY 使用索引的条件</h3>
+    <p>ORDER BY 能使用索引，需要满足以下条件之一：</p>
+    <ul>
+      <li>ORDER BY 的列顺序与索引列顺序一致，且方向相同（都是 ASC 或都是 DESC）</li>
+      <li>WHERE 条件使用了索引的最左前缀，ORDER BY 使用了索引的后续列</li>
+    </ul>
+
+    <pre>
+<span class="comment">-- 索引 (a, b, c)</span>
+
+<span class="comment">-- 能使用索引排序</span>
+EXPLAIN SELECT * FROM t WHERE a = 1 ORDER BY b, c;
+<span class="comment">-- Extra: Using index condition（索引用于 WHERE + ORDER BY）</span>
+
+<span class="comment">-- 不能使用索引排序：b 和 c 的顺序与索引不一致</span>
+EXPLAIN SELECT * FROM t WHERE a = 1 ORDER BY c, b;
+
+<span class="comment">-- 不能使用索引排序：b 是 ASC，c 是 DESC</span>
+EXPLAIN SELECT * FROM t WHERE a = 1 ORDER BY b ASC, c DESC;
+<span class="comment">-- MySQL 8.0 支持降序索引，可以创建 (a, b, c DESC) 来解决</span>
+
+<span class="comment">-- 能使用索引排序：WHERE 命中 a，ORDER BY 命中 b, c</span>
+EXPLAIN SELECT * FROM t WHERE a > 1 ORDER BY a, b;
+<span class="comment">-- 注意：a 用范围查询后，b 能否用于排序取决于 MySQL 版本和优化器</span>
+    </pre>
+
+    <h3>filesort 触发条件</h3>
+    <p>当 ORDER BY 无法使用索引时，MySQL 会进行 filesort（文件排序）。filesort 不是真的用文件排序，而是在内存或临时文件中排序。</p>
+
+    <div class="callout warn">
+      <strong>filesort 的两种算法</strong>
+      (1) <strong>单路排序</strong>：一次性读取所有需要的列到内存，然后排序。需要的内存较大。
+      (2) <strong>双路排序</strong>：先读取排序键和行指针，排序后再回表读取数据。需要两次 IO。
+      MySQL 会根据 max_length_for_sort_data 和排序数据大小自动选择算法。
+    </div>
+
+    <h3>ORDER BY + LIMIT 优化</h3>
+    <pre>
+<span class="comment">-- 常见慢查询：大偏移量分页</span>
+EXPLAIN SELECT * FROM orders ORDER BY created_at DESC LIMIT 100000, 10;
+<span class="comment">-- 问题：MySQL 需要排序前 100010 行，然后丢弃前 100000 行</span>
+<span class="comment">-- Extra: Using filesort</span>
+
+<span class="comment">-- 优化方案 1：使用覆盖索引 + 延迟关联</span>
+EXPLAIN SELECT * FROM orders o
+JOIN (SELECT id FROM orders ORDER BY created_at DESC LIMIT 100000, 10) t
+ON o.id = t.id;
+<span class="comment">-- 子查询只查 id（覆盖索引），然后回表拿完整数据</span>
+
+<span class="comment">-- 优化方案 2：使用游标分页（最优）</span>
+<span class="comment">-- 假设上一页最后一条的 created_at = '2024-01-01 10:00:00'，id = 12345</span>
+EXPLAIN SELECT * FROM orders
+WHERE created_at <= '2024-01-01 10:00:00' AND (created_at < '2024-01-01 10:00:00' OR id < 12345)
+ORDER BY created_at DESC, id DESC
+LIMIT 10;
+<span class="comment">-- 利用索引的有序性，直接定位到起始位置</span>
+    </pre>
+
+    <div class="inline-quiz">
+      <p>ORDER BY 与索引列顺序不一致会导致什么？</p>
+      <input type="text" id="iq9" placeholder="简答，10字以内">
+      <button onclick="checkInline('iq9', 'filesort', 'iq9-fb')">检验</button>
+      <div class="feedback" id="iq9-fb"></div>
+    </div>
+
+    <!-- ===== 八、慢查询实战 ===== -->
+    <h2 id="practice">八、慢查询实战：诊断 → 加索引 → EXPLAIN 验证</h2>
+
+    <h3>场景描述</h3>
+    <p>假设你在 clickhouse-mcp-server 项目中有一个 query_log 表，用于记录用户的查询历史。表结构如下：</p>
+
+    <pre>
+CREATE TABLE query_log (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id INT NOT NULL,
+    query_text TEXT,
+    query_type VARCHAR(20),
+    status VARCHAR(10),
+    duration_ms INT,
+    created_at DATETIME NOT NULL,
+    INDEX idx_user_created (user_id, created_at)
+);
+
+<span class="comment">-- 慢查询：查询用户 1001 最近 7 天的成功查询，按创建时间倒序，取前 20 条</span>
+SELECT id, query_text, duration_ms, created_at
+FROM query_log
+WHERE user_id = 1001
+  AND status = 'success'
+  AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+ORDER BY created_at DESC
+LIMIT 20;
+    </pre>
+
+    <h3>第一步：EXPLAIN 诊断</h3>
+    <pre>
+EXPLAIN SELECT id, query_text, duration_ms, created_at
+FROM query_log
+WHERE user_id = 1001
+  AND status = 'success'
+  AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+ORDER BY created_at DESC
+LIMIT 20;
+
+<span class="comment">-- 可能的输出：</span>
+<span class="comment">-- type: range（使用了 idx_user_created 的 created_at 部分）</span>
+<span class="comment">-- key: idx_user_created</span>
+<span class="comment">-- rows: 1500（估计扫描 1500 行）</span>
+<span class="comment">-- Extra: Using index condition; Using where; Using filesort</span>
+<span class="comment">-- 问题：</span>
+<span class="comment">-- 1. Using filesort：ORDER BY created_at DESC 没有用到索引排序（因为 status = 'success' 在中间）</span>
+<span class="comment">-- 2. Using where：status = 'success' 需要回表后过滤</span>
+    </pre>
+
+    <h3>第二步：分析索引失效原因</h3>
+    <ul>
+      <li>索引是 (user_id, created_at)，但查询条件是 user_id = 1001 AND status = 'success' AND created_at >= ...</li>
+      <li>status 不在索引中，导致索引只能用到 user_id，created_at 的范围查询因为 status 在中间而失效</li>
+      <li>ORDER BY created_at DESC 也无法使用索引排序，因为 status 条件打断了索引的连续性</li>
+    </ul>
+
+    <h3>第三步：优化方案</h3>
+    <pre>
+<span class="comment">-- 方案 1：扩展索引，包含 status</span>
+ALTER TABLE query_log DROP INDEX idx_user_created;
+CREATE INDEX idx_user_status_created ON query_log(user_id, status, created_at);
+
+<span class="comment">-- 重新 EXPLAIN</span>
+EXPLAIN SELECT id, query_text, duration_ms, created_at
+FROM query_log
+WHERE user_id = 1001
+  AND status = 'success'
+  AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+ORDER BY created_at DESC
+LIMIT 20;
+
+<span class="comment">-- 优化后的输出：</span>
+<span class="comment">-- type: range</span>
+<span class="comment">-- key: idx_user_status_created</span>
+<span class="comment">-- rows: 200（扫描行数大幅减少）</span>
+<span class="comment">-- Extra: Using index condition（ICP 生效，status 和 created_at 都在存储引擎层过滤）</span>
+<span class="comment">-- 注意：如果查询列都在索引中，会变成 Using index（覆盖索引）</span>
+
+<span class="comment">-- 方案 2：如果查询列不多，考虑覆盖索引</span>
+<span class="comment">-- 当前查询：id, query_text, duration_ms, created_at</span>
+<span class="comment">-- id 是主键，已经在索引的叶子节点中</span>
+<span class="comment">-- 扩展索引：</span>
+CREATE INDEX idx_cover ON query_log(user_id, status, created_at, duration_ms);
+<span class="comment">-- 注意：query_text 是 TEXT，太大，不适合加入索引</span>
+<span class="comment">-- 如果不需要 query_text，可以只查 id, duration_ms, created_at 实现覆盖索引</span>
+    </pre>
+
+    <h3>第四步：验证优化效果</h3>
+    <pre>
+<span class="comment">-- 对比优化前后的执行时间</span>
+SET profiling = 1;
+
+<span class="comment">-- 优化前</span>
+SELECT id, query_text, duration_ms, created_at
+FROM query_log
+WHERE user_id = 1001
+  AND status = 'success'
+  AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+ORDER BY created_at DESC
+LIMIT 20;
+
+<span class="comment">-- 优化后</span>
+SELECT id, query_text, duration_ms, created_at
+FROM query_log
+WHERE user_id = 1001
+  AND status = 'success'
+  AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+ORDER BY created_at DESC
+LIMIT 20;
+
+SHOW PROFILES;
+    </pre>
+
+    <div class="callout success">
+      <strong>实战总结</strong>
+      慢查询优化的标准流程：(1) 用 EXPLAIN 分析查询计划；(2) 识别问题（全表扫描、filesort、临时表）；(3) 根据最左前缀原则调整索引或查询；(4) 重新 EXPLAIN 验证；(5) 用 SHOW PROFILES 或实际执行时间验证性能提升。
+    </div>
+
+    <div class="inline-quiz">
+      <p>对于索引 (user_id, status, created_at)，WHERE user_id=1 AND status='success' ORDER BY created_at DESC 能否避免 filesort？</p>
+      <input type="text" id="iq10" placeholder="简答，能 / 不能">
+      <button onclick="checkInline('iq10', '能', 'iq10-fb')">检验</button>
+      <div class="feedback" id="iq10-fb"></div>
+    </div>
+
+    <!-- ===== 九、ClickHouse 对比 ===== -->
+    <h2 id="compare">九、ClickHouse 对比：MergeTree 稀疏索引 vs MySQL B+ 树稠密索引</h2>
+
+    <h3>核心差异</h3>
+    <p>ClickHouse 的 MergeTree 引擎使用<strong>稀疏索引</strong>（Sparse Index），与 MySQL InnoDB 的<strong>稠密索引</strong>（Dense Index）有本质区别。</p>
+
+    <table>
+      <tr><th>对比维度</th><th>MySQL InnoDB B+ 树</th><th>ClickHouse MergeTree</th></tr>
+      <tr><td>索引类型</td><td>稠密索引（每行都有索引条目）</td><td>稀疏索引（每隔 N 行一个索引条目）</td></tr>
+      <tr><td>索引粒度</td><td>每行</td><td>默认 8192 行（index_granularity）</td></tr>
+      <tr><td>适用场景</td><td>OLTP：高并发点查、事务</td><td>OLAP：大规模聚合分析</td></tr>
+      <tr><td>等值查询</td><td>很快（B+ 树 O(log n)）</td><td>较慢（需要扫描多个 granule）</td></tr>
+      <tr><td>范围查询</td><td>快（叶子节点链表）</td><td>快（稀疏索引跳过不需要的 granule）</td></tr>
+      <tr><td>聚合查询</td><td>慢（需要全表扫描或索引扫描）</td><td>极快（列存 + 稀疏索引 + 向量化）</td></tr>
+      <tr><td>写入方式</td><td>行级写入，实时可见</td><td>批量写入，后台 merge</td></tr>
+    </table>
+
+    <h3>稀疏索引的工作原理</h3>
+    <pre>
+<span class="comment">-- ClickHouse MergeTree 表的稀疏索引示意</span>
+
+<span class="comment">-- 数据按主键排序存储，每 8192 行（一个 granule）生成一个索引条目</span>
+<span class="comment">-- 索引条目包含：granule 的起始主键值</span>
+
+<span class="comment">-- 示例：主键 (user_id, created_at)</span>
+<span class="comment">-- granule 1: user_id=1, created_at='2024-01-01' ... user_id=1, created_at='2024-01-07'</span>
+<span class="comment">-- granule 2: user_id=1, created_at='2024-01-08' ... user_id=2, created_at='2024-01-01'</span>
+<span class="comment">-- ...</span>
+
+<span class="comment">-- 查询：WHERE user_id = 1 AND created_at >= '2024-01-05'</span>
+<span class="comment">-- 1. 稀疏索引快速定位到可能的 granule 范围（granule 1 和 2）</span>
+<span class="comment">-- 2. 只加载这两个 granule 的数据（其他 granule 跳过）</span>
+<span class="comment">-- 3. 在 granule 内部再进行精确过滤</span>
+
+<span class="comment">-- 对比 MySQL：</span>
+<span class="comment">-- MySQL 的 B+ 树索引，每个叶子节点对应一行数据</span>
+<span class="comment">-- ClickHouse 的稀疏索引，每个索引条目对应 8192 行数据</span>
+    </pre>
+
+    <div class="callout">
+      <strong>clickhouse-mcp-server 的选型启示</strong>
+      如果你的查询场景是：(1) 按用户 ID 查询最近的查询历史 → MySQL（需要快速点查）；(2) 分析所有用户的查询耗时分布 → ClickHouse（需要大规模聚合）。
+      这也是为什么 clickhouse-mcp-server 项目有意义：它让你在保留 MySQL 作为 OLTP 存储的同时，利用 ClickHouse 做 OLAP 分析。
+    </div>
+
+    <div class="inline-quiz">
+      <p>ClickHouse 稀疏索引的一个 granule 默认多少行？</p>
+      <input type="text" id="iq11" placeholder="数字">
+      <button onclick="checkInline('iq11', '8192', 'iq11-fb')">检验</button>
+      <div class="feedback" id="iq11-fb"></div>
+    </div>
+
+    <!-- ===== 十、面试话术 ===== -->
+    <h2 id="interview">十、面试话术</h2>
+
+    <div class="callout success">
+      <strong>高频问题 1</strong>
+      "MySQL 索引为什么用 B+ 树不用 B 树？"
+    </div>
+    <p><strong>标准答法（40秒版本）：</strong></p>
+    <p>MySQL InnoDB 选择 B+ 树作为索引结构，主要有三个原因。第一，<strong>磁盘页利用率更高</strong>：B+ 树的非叶子节点只存储键值，不存储数据，这样一个 16KB 的磁盘页可以存储更多的键，树的高度通常只有 3-4 层就能存储千万级的数据，减少了磁盘 IO 次数。第二，<strong>范围查询更高效</strong>：B+ 树的叶子节点通过双向链表连接，执行 WHERE id BETWEEN 10 AND 100 这样的范围查询时，只需要先定位到 id=10 的叶子节点，然后沿着链表向右遍历即可，不需要从根节点重新查找。第三，<strong>查询性能稳定</strong>：B+ 树的所有查询都必须到达叶子节点，路径长度一致，而 B 树的数据分布在所有层，查询路径长度不固定。这是 InnoDB 选择 B+ 树的核心原因。</p>
+
+    <div class="callout success">
+      <strong>高频问题 2</strong>
+      "如何优化一条慢查询？"
+    </div>
+    <p><strong>STAR 答法（45秒版本）：</strong></p>
+    <p>我优化慢查询的标准流程分为五步。第一，<strong>用 EXPLAIN 分析</strong>：查看 type 字段（至少要达到 range，最好是 ref）、key 字段（是否使用了期望的索引）、rows 字段（估计扫描行数）、Extra 字段（是否有 Using filesort 或 Using temporary）。第二，<strong>识别索引问题</strong>：检查 WHERE 条件是否违反了最左前缀原则、是否有索引失效的场景（函数、隐式转换、左模糊等）、ORDER BY 是否能利用索引排序。第三，<strong>调整索引或查询</strong>：根据最左前缀原则扩展或调整索引顺序、将范围查询的列放到索引末尾、如果有 filesort 考虑覆盖索引。第四，<strong>重新 EXPLAIN 验证</strong>：确认 type 提升、rows 减少、Extra 中的 filesort 消失。第五，<strong>用实际数据验证性能</strong>：用 SHOW PROFILES 对比优化前后的执行时间，确保优化有效。我之前优化过一个 query_log 表的查询，通过扩展索引 (user_id, status, created_at) 避免了 filesort，扫描行数从 1500 降到 200。</p>
+
+    <div class="callout success">
+      <strong>高频问题 3</strong>
+      "什么情况下索引会失效？"
+    </div>
+    <p><strong>标准答法（35秒版本）：</strong></p>
+    <p>索引失效有七大常见场景，我总结为七个字：<strong>函计隐 OR 不 NOT</strong>。第一，<strong>函数</strong>：对索引列使用函数（如 WHERE YEAR(created_at) = 2024），索引存的是原始值，函数改变了它。第二，<strong>计算</strong>：对索引列进行计算（如 WHERE price * 1.1 > 100），应该把计算移到等号右边。第三，<strong>隐式转换</strong>：字符串列用数字查询（如 WHERE phone = 13800138000），MySQL 会做类型转换导致索引失效。第四，<strong>OR</strong>：OR 连接非索引列（如 WHERE user_id = 1 OR amount > 100），可能变成全表扫描。第五，<strong>不等于</strong>：使用 != 或 <> 通常无法使用索引。第六，<strong>左模糊</strong>：LIKE '%明' 无法利用 B+ 树的有序性，但 LIKE '张%' 可以。第七，<strong>NOT IN</strong>：通常无法利用索引。除此之外，覆盖索引可以避免回表，索引下推（ICP）可以减少回表次数，这些都是索引优化的重要手段。</p>
+
+    <!-- ===== 十一、检索练习 ===== -->
+    <div class="quiz-section" id="quiz">
+      <h2>检索练习</h2>
+      <p style="font-family:sans-serif;font-size:13px;color:#64748b;margin-bottom:20px">不看上方内容，凭记忆回答。答错不扣分，只是帮你定位记忆空白。</p>
+
+      <div class="quiz-q" id="q1">
+        <p>1. InnoDB 使用 B+ 树作为索引结构，以下哪个不是其原因？</p>
+        <div class="quiz-options">
+          <button class="quiz-opt" onclick="answer('q1','A')">A. 非叶子节点只存 key，磁盘页利用率更高</button>
+          <button class="quiz-opt" onclick="answer('q1','B')">B. 叶子节点链表连接，范围查询高效</button>
+          <button class="quiz-opt" onclick="answer('q1','C')">C. B+ 树的查询性能比 Hash 索引更稳定</button>
+          <button class="quiz-opt" onclick="answer('q1','D')">D. B+ 树支持事务，B 树不支持事务</button>
+        </div>
+        <div class="quiz-feedback" id="q1-fb">B+ 树和 B 树都只是索引结构，与事务无关。事务是存储引擎（InnoDB）层面的功能，不是索引结构层面的。A、B、C 都是 InnoDB 选择 B+ 树的正确原因。</div>
+      </div>
+
+      <div class="quiz-q" id="q2">
+        <p>2. 对于联合索引 (a, b, c)，以下哪个查询不能命中索引？</p>
+        <div class="quiz-options">
+          <button class="quiz-opt" onclick="answer('q2','A')">A. WHERE a = 1 AND b = 2</button>
+          <button class="quiz-opt" onclick="answer('q2','B')">B. WHERE a = 1 AND c = 3</button>
+          <button class="quiz-opt" onclick="answer('q2','C')">C. WHERE a = 1 AND b = 2 AND c = 3</button>
+          <button class="quiz-opt" onclick="answer('q2','D')">D. WHERE a = 1 AND b > 2 AND c = 3</button>
+        </div>
+        <div class="quiz-feedback" id="q2-fb">B 只能用到 a，c 无法使用索引（跳过了 b）。D 中 b 用范围查询后，c 也无法使用索引。但 B 是完全不能命中（c 完全用不到），而 D 能命中 a 和 b。题目问"不能命中"，单选最优答案是 B（c 完全用不到索引）。</div>
+      </div>
+
+      <div class="quiz-q" id="q3">
+        <p>3. 覆盖索引的好处是什么？</p>
+        <div class="quiz-options">
+          <button class="quiz-opt" onclick="answer('q3','A')">A. 索引占用空间更小</button>
+          <button class="quiz-opt" onclick="answer('q3','B')">B. 避免回表，减少磁盘 IO</button>
+          <button class="quiz-opt" onclick="answer('q3','C')">C. 支持更多的查询条件</button>
+          <button class="quiz-opt" onclick="answer('q3','D')">D. 写入速度更快</button>
+        </div>
+        <div class="quiz-feedback" id="q3-fb">覆盖索引是指查询的所有列都包含在索引中，InnoDB 可以直接从索引中返回结果，不需要回表到聚簇索引查找完整数据，从而减少磁盘 IO。覆盖索引的代价是索引变大，写入时的维护成本增加。</div>
+      </div>
+
+      <div class="quiz-q" id="q4">
+        <p>4. EXPLAIN 的 type 字段中，以下哪个性能最差？</p>
+        <div class="quiz-options">
+          <button class="quiz-opt" onclick="answer('q4','A')">A. ref</button>
+          <button class="quiz-opt" onclick="answer('q4','B')">B. range</button>
+          <button class="quiz-opt" onclick="answer('q4','C')">C. index</button>
+          <button class="quiz-opt" onclick="answer('q4','D')">D. ALL</button>
+        </div>
+        <div class="quiz-feedback" id="q4-fb">type 性能排序：const > eq_ref > ref > range > index > ALL。ALL 是全表扫描，性能最差。优化目标：至少达到 range，理想是 ref 或 const。</div>
+      </div>
+
+      <div class="quiz-q" id="q5">
+        <p>5. 以下哪个写法会导致索引失效？</p>
+        <div class="quiz-options">
+          <button class="quiz-opt" onclick="answer('q5','A')">A. WHERE user_id = 100</button>
+          <button class="quiz-opt" onclick="answer('q5','B')">B. WHERE created_at >= '2024-01-01'</button>
+          <button class="quiz-opt" onclick="answer('q5','C')">C. WHERE YEAR(created_at) = 2024</button>
+          <button class="quiz-opt" onclick="answer('q5','D')">D. WHERE created_at BETWEEN '2024-01-01' AND '2024-12-31'</button>
+        </div>
+        <div class="quiz-feedback" id="q5-fb">对索引列使用函数（YEAR(created_at)）会导致索引失效，因为索引存储的是 created_at 的原始值，YEAR() 函数改变了它。其他写法都可以正常使用索引。</div>
+      </div>
+
+      <div id="quiz-total-score" class="quiz-score"></div>
+    </div>
+
+    <!-- ===== 课后首要行动 ===== -->
+    <h2>课后首要行动（按重要性排序）</h2>
+    <ol style="padding-left:20px;font-size:15px;line-height:2">
+      <li><strong>分析一条慢查询</strong>：在你的项目中找一条执行时间超过 100ms 的查询，用 EXPLAIN 分析其执行计划，识别是否有全表扫描、filesort 或临时表</li>
+      <li><strong>验证最左前缀原则</strong>：创建一张测试表，建立联合索引 (a, b, c)，然后用 EXPLAIN 验证不同 WHERE 条件组合是否命中索引</li>
+      <li><strong>测试索引失效场景</strong>：用函数、隐式转换、左模糊等写法测试索引是否失效，观察 EXPLAIN 的 type 和 key 字段变化</li>
+      <li><strong>实现覆盖索引优化</strong>：找一条 SELECT * 的查询，分析是否可以通过扩展索引列实现覆盖索引，并验证性能提升</li>
+      <li><strong>对比 ClickHouse 和 MySQL</strong>：如果你有 clickhouse-mcp-server 项目，对比同一个聚合查询在 MySQL 和 ClickHouse 中的执行时间，理解两者的适用场景差异</li>
+    </ol>
+
+    <!-- ===== Primary Sources ===== -->
+    <h2>Primary Sources</h2>
+
+    <div class="primary-source">
+      <div class="label">官方文档（必读）</div>
+      <div class="title"><a href="https://dev.mysql.com/doc/refman/8.0/en/mysql-indexes.html" target="_blank">MySQL 8.0 Reference Manual — Indexes</a></div>
+      <div class="desc">MySQL 官方文档的索引章节，详细讲解 InnoDB 索引结构、创建索引的语法、索引使用规则。读完本课后建议深入阅读（90分钟）。</div>
+    </div>
+
+    <div class="primary-source">
+      <div class="label">EXPLAIN 详解</div>
+      <div class="title"><a href="https://dev.mysql.com/doc/refman/8.0/en/explain-output.html" target="_blank">EXPLAIN Output Format</a></div>
+      <div class="desc">MySQL 官方 EXPLAIN 输出字段详解，包括 type、key、rows、Extra 等字段的含义和取值。</div>
+    </div>
+
+    <div class="primary-source">
+      <div class="label">索引下推</div>
+      <div class="title"><a href="https://dev.mysql.com/doc/refman/8.0/en/index-condition-pushdown-optimization.html" target="_blank">Index Condition Pushdown Optimization</a></div>
+      <div class="desc">MySQL 官方对 ICP 优化器的说明，包括生效条件、配置方法、性能影响。</div>
+    </div>
+
+    <div class="primary-source">
+      <div class="label">ClickHouse 对比</div>
+      <div class="title"><a href="https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree" target="_blank">MergeTree Table Engine</a></div>
+      <div class="desc">ClickHouse 官方 MergeTree 引擎文档，包括稀疏索引、主键、分区等概念。对比 MySQL 索引结构时必读。</div>
+    </div>
+
+    <div class="primary-source">
+      <div class="label">性能优化</div>
+      <div class="title"><a href="https://dev.mysql.com/doc/refman/8.0/en/optimization-indexes.html" target="_blank">Optimization and Indexes</a></div>
+      <div class="desc">MySQL 官方索引优化指南，包括如何设计索引、如何避免索引失效、如何解读 EXPLAIN 结果。</div>
+    </div>
+
+    <div class="ask-me">
+      <strong>有问题？直接问你的老师。</strong><br>
+      对 B+ 树结构理解不够清晰？不知道如何为复杂查询设计联合索引？想了解 ICP 在联合索引范围查询中的具体行为？在对话框里问，马上解答。
+    </div>
+
+    <div class="nav-links">
+      <a href="0020-batch-import-optimizer.html">Lesson 20: Batch Import Optimizer</a>
+      <span style="color:#94a3b8">Lesson 22 coming next</span>
+    </div>
+  </main>
+</div>
+
+<script>
+  const answers = { q1:'D', q2:'B', q3:'B', q4:'D', q5:'C' };
+  const scores = {};
+
+  function answer(qid, choice) {
+    const opts = document.querySelectorAll(`#${qid} .quiz-opt`);
+    opts.forEach(o => o.disabled = true);
+    const selected = opts[['A','B','C','D'].indexOf(choice)];
+    const correct = answers[qid];
+    if (choice === correct) {
+      selected.classList.add('correct');
+      scores[qid] = 1;
+    } else {
+      selected.classList.add('wrong');
+      opts[['A','B','C','D'].indexOf(correct)].classList.add('correct');
+      scores[qid] = 0;
+    }
+    const fb = document.getElementById(`${qid}-fb`);
+    fb.style.display = 'block';
+    updateTotal();
+  }
+
+  function updateTotal() {
+    const total = Object.keys(answers).length;
+    const got = Object.values(scores).reduce((a,b)=>a+b, 0);
+    if (Object.keys(scores).length === total) {
+      const el = document.getElementById('quiz-total-score');
+      el.style.display = 'block';
+      el.textContent = `得分：${got}/${total}`;
+      el.className = 'quiz-score ' + (got >= 4 ? 'good' : 'ok');
+    }
+  }
+
+  function checkInline(inputId, expected, fbId) {
+    const val = document.getElementById(inputId).value.trim().replace(/\s+/g,'');
+    const exp = expected.replace(/\s+/g,'');
+    const fb = document.getElementById(fbId);
+    fb.style.display = 'block';
+    if (val === exp) {
+      fb.className = 'feedback ok';
+      fb.textContent = '正确';
+    } else {
+      fb.className = 'feedback bad';
+      fb.textContent = '答案：' + expected;
+    }
+  }
+</script>
+</body>
+</html>
