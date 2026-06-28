@@ -1,0 +1,999 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 21 — DEX三角套利 + 闪电贷套利：Solidity + Foundry 入门到实战</title>
+  <style>
+    :root {
+      --bg: #fafaf8;
+      --text: #1a1a1a;
+      --accent: #2563eb;
+      --accent-light: #eff6ff;
+      --border: #e2e8f0;
+      --code-bg: #f1f5f9;
+      --success: #16a34a;
+      --success-light: #f0fdf4;
+      --warn: #d97706;
+      --warn-light: #fffbeb;
+      --danger: #dc2626;
+      --danger-light: #fef2f2;
+      --sidebar: #1e293b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Georgia', serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+    }
+    .layout { display: flex; min-height: 100vh; }
+    nav {
+      width: 220px;
+      background: var(--sidebar);
+      color: #94a3b8;
+      padding: 32px 0;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      flex-shrink: 0;
+    }
+    nav h3 { color: #f1f5f9; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; padding: 0 20px 12px; }
+    nav a { display: block; padding: 6px 20px; color: #94a3b8; text-decoration: none; font-size: 13px; font-family: sans-serif; }
+    nav a:hover { color: #f1f5f9; background: rgba(255,255,255,0.05); }
+    nav .nav-section { margin-bottom: 20px; }
+    main { flex: 1; max-width: 780px; padding: 56px 64px; }
+    .lesson-meta { font-family: sans-serif; font-size: 12px; color: #64748b; margin-bottom: 32px; }
+    .lesson-meta span { margin-right: 16px; }
+    h1 { font-size: 32px; font-weight: 700; margin-bottom: 8px; line-height: 1.2; }
+    h2 { font-size: 20px; font-weight: 700; margin: 40px 0 12px; padding-bottom: 6px; border-bottom: 2px solid var(--border); }
+    h3 { font-size: 16px; font-weight: 700; margin: 24px 0 8px; color: #334155; }
+    p { margin-bottom: 14px; }
+    a { color: var(--accent); }
+    code { font-family: 'Menlo', 'Monaco', monospace; font-size: 13px; background: var(--code-bg); padding: 2px 5px; border-radius: 3px; }
+    pre {
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 20px 24px;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin: 16px 0;
+      font-family: 'Menlo', 'Monaco', monospace;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    pre .comment { color: #64748b; }
+    pre .keyword { color: #93c5fd; }
+    pre .string { color: #86efac; }
+    pre .func { color: #fde68a; }
+    pre .type { color: #f9a8d4; }
+    .callout {
+      border-left: 4px solid var(--accent);
+      background: var(--accent-light);
+      padding: 14px 18px;
+      margin: 20px 0;
+      border-radius: 0 6px 6px 0;
+      font-size: 14px;
+    }
+    .callout.warn { border-color: var(--warn); background: var(--warn-light); }
+    .callout.success { border-color: var(--success); background: var(--success-light); }
+    .callout.danger { border-color: var(--danger); background: var(--danger-light); }
+    .callout strong { display: block; margin-bottom: 4px; font-family: sans-serif; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .compare {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin: 16px 0;
+    }
+    .compare-box { background: var(--code-bg); border-radius: 8px; padding: 14px; }
+    .compare-box h4 { font-family: sans-serif; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; color: #64748b; }
+    table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px; font-family: sans-serif; }
+    th { background: var(--code-bg); text-align: left; padding: 8px 12px; border-bottom: 2px solid var(--border); font-size: 12px; }
+    td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    tr:hover td { background: var(--accent-light); }
+
+    /* Quiz */
+    .quiz-section { background: var(--code-bg); border-radius: 10px; padding: 24px; margin: 32px 0; }
+    .quiz-section h2 { border: none; margin-top: 0; }
+    .quiz-q { margin-bottom: 24px; }
+    .quiz-q p { font-weight: 600; margin-bottom: 10px; font-size: 15px; }
+    .quiz-options { display: grid; gap: 8px; }
+    .quiz-opt { display: block; background: white; border: 2px solid var(--border); border-radius: 6px; padding: 10px 14px; cursor: pointer; font-size: 14px; transition: all 0.15s; text-align: left; width: 100%; font-family: sans-serif; }
+    .quiz-opt:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-light); }
+    .quiz-opt.correct { border-color: #16a34a; background: var(--success-light); color: #16a34a; font-weight: 600; }
+    .quiz-opt.wrong { border-color: var(--danger); background: var(--danger-light); color: var(--danger); }
+    .quiz-opt:disabled { cursor: default; }
+    .quiz-feedback { margin-top: 8px; font-size: 13px; display: none; padding: 8px 12px; border-radius: 4px; background: white; border: 1px solid var(--border); }
+    .quiz-score { text-align: center; font-size: 18px; font-weight: 700; padding: 16px; border-radius: 8px; display: none; margin-top: 16px; font-family: sans-serif; }
+    .quiz-score.good { background: var(--success-light); color: var(--success); }
+    .quiz-score.ok { background: var(--warn-light); color: var(--warn); }
+    .inline-quiz { background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 14px 18px; margin: 20px 0; }
+    .inline-quiz p { margin-bottom: 8px; font-weight: 600; font-size: 14px; }
+    .inline-quiz input { border: 2px solid var(--border); border-radius: 4px; padding: 6px 10px; font-size: 13px; font-family: monospace; width: 100%; max-width: 360px; margin-bottom: 8px; }
+    .inline-quiz button { background: var(--accent); color: white; border: none; border-radius: 4px; padding: 6px 14px; cursor: pointer; font-size: 13px; font-family: sans-serif; }
+    .inline-quiz .feedback { font-size: 13px; margin-top: 6px; display: none; }
+    .inline-quiz .feedback.ok { color: var(--success); }
+    .inline-quiz .feedback.bad { color: var(--danger); }
+
+    .primary-source { background: white; border: 1px solid var(--border); border-radius: 8px; padding: 18px; margin: 32px 0; font-family: sans-serif; }
+    .primary-source .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; margin-bottom: 6px; }
+    .primary-source .title { font-size: 16px; font-weight: 700; color: var(--accent); margin-bottom: 4px; }
+    .primary-source .desc { font-size: 13px; color: #64748b; }
+
+    .nav-links { font-family: sans-serif; font-size: 13px; display: flex; gap: 16px; margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--border); }
+    .nav-links a { color: var(--accent); }
+    .ask-me { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 14px 18px; margin: 32px 0; font-family: sans-serif; font-size: 14px; }
+    .ask-me strong { color: #0369a1; }
+
+    details { margin: 12px 0; font-family: sans-serif; font-size: 14px; }
+    details summary { cursor: pointer; font-weight: 600; color: var(--accent); padding: 8px 0; }
+    details summary:hover { text-decoration: underline; }
+    details .answer { padding: 12px 16px; background: var(--code-bg); border-radius: 6px; margin-top: 8px; border-left: 3px solid var(--accent); }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <nav>
+    <div class="nav-section">
+      <h3>本课导航</h3>
+      <a href="#why">一、为什么重要</a>
+      <a href="#precheck">二、前置检查</a>
+      <a href="#part1">三、Foundry 环境搭建</a>
+      <a href="#part2">四、Solidity 快速入门</a>
+      <a href="#part3">五、UniswapV2 AMM 深度速通</a>
+      <a href="#part4">六、三角套利合约实现</a>
+      <a href="#part5">七、Foundry Fork 测试</a>
+      <a href="#part6">八、闪电贷套利合约</a>
+      <a href="#part7">九、闪电贷 Fork 测试</a>
+      <a href="#part8">十、部署 + Gas 优化</a>
+      <a href="#interview">十一、面试话术</a>
+      <a href="#quiz">十二、检索练习</a>
+    </div>
+    <div class="nav-section">
+      <h3>课程系列</h3>
+      <a href="0020-batch-import-optimizer.html">20 批量导入优化</a>
+      <a href="0021-dex-arbitrage-foundry.html" style="color:#f1f5f9;font-weight:700">21 DEX套利 ←</a>
+    </div>
+    <div class="nav-section">
+      <h3>参考文档</h3>
+      <a href="https://book.getfoundry.sh" target="_blank">Foundry Book</a>
+      <a href="https://docs.uniswap.org" target="_blank">Uniswap Docs</a>
+    </div>
+  </nav>
+
+  <main>
+    <div class="lesson-meta">
+      <span>Lesson 21</span>
+      <span>DEX 套利 + Foundry</span>
+      <span>~60 分钟</span>
+    </div>
+
+    <h1>DEX 三角套利 + 闪电贷套利：Solidity + Foundry 入门到实战</h1>
+    <p style="font-size:15px;color:#64748b;margin-bottom:32px">
+      你在 NDSS 以太坊论文研究中积累了 EVM 理论深度，本课把它转化为工程能力：用 Solidity 编写生产级套利合约，用 Foundry 跑通主网 fork 测试。这不仅是 DeFi 实战，更是 <strong>Agent 链路（监控 → 分析 → 执行）</strong> 的链上版本——后续可封装为 MCP server 监听 mempool。
+    </p>
+
+    <!-- 一、为什么重要 -->
+    <h2 id="why">一、这节课为什么重要</h2>
+    <div class="callout">
+      <strong>与面试的连接</strong>
+      这节课程看起来偏离了 Java 面试主线，但实际上它服务于：Defi + Agent 交集叙事（简历上写 "NDSS 以太坊论文" 是纯研究，加上 Foundry/Uniswap/闪电贷实战代码，能讲一个 "从研究到工程" 的转型故事）；Agent 开发新领域（链上套利是典型的 agent pipeline，后续可扩展为 MCP server 监听 mempool）；系统设计深度（闪电贷的借贷-套利-还款三阶段本质是短暂状态机 + 原子性事务，与数据库事务、分布式 Saga 是同一类问题）。
+    </div>
+
+    <div class="callout success">
+      <strong>项目产出</strong>
+      本课产出合约可直接发展为两个 GitHub 项目：<code>foundry-arbitrage-bot</code>（Foundry 实现的三角套利 + 闪电贷套利合约套件，含完整的 foundry test fork 测试）和 <code>mempool-arbitrage-agent</code>（MCP server 监听链上交易/查找套利机会，后续课程）。
+    </div>
+
+    <!-- 二、前置检查 -->
+    <h2 id="precheck">二、前置检查（30 秒自测）</h2>
+    <p>验证以下概念，如不熟悉则先补 2 分钟说明：</p>
+
+    <details>
+      <summary>1. EIP-20 / ERC-20：transfer / transferFrom / approve / balanceOf 接口含义</summary>
+      <div class="answer">
+        <p><strong>ERC-20</strong> 是以太坊代币标准接口：</p>
+        <ul style="font-family: monospace; font-size: 13px; padding-left: 20px;">
+          <li><code>transfer(to, amount)</code> — 从调用者转账给 to</li>
+          <li><code>transferFrom(from, to, amount)</code> — 从 from 转账给 to（需先 approve）</li>
+          <li><code>approve(spender, amount)</code> — 授权 spender 可花费调用者的 amount 代币</li>
+          <li><code>balanceOf(account)</code> — 查询 account 的代币余额</li>
+        </ul>
+      </div>
+    </details>
+
+    <details>
+      <summary>2. ETH vs WETH：为什么需要 Wrapped Ether</summary>
+      <div class="answer">
+        <p>原生 ETH 不是 ERC-20 代币，不能满足 <code>transfer/approve</code> 等接口。WETH (Wrapped Ether) 是 ETH 的 ERC-20 包装：</p>
+        <ul style="font-size: 13px; padding-left: 20px;">
+          <li><code>deposit()</code> — 发送 ETH，获得等量 WETH</li>
+          <li><code>withdraw(amount)</code> — 销毁 WETH，取回等量 ETH</li>
+        </ul>
+        <p>DeFi 协议（Uniswap/AAVE 等）都要求 ERC-20 接口，因此 ETH 必须先 wrap 为 WETH 才能参与 AMM。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>3. UniswapV2 Pair：什么是 x*y=k，为什么是恒定乘积</summary>
+      <div class="answer">
+        <p><strong>恒定乘积公式</strong>：<code>reserve0 * reserve1 = k</code>（k 不变）。</p>
+        <p>当交易者用 token0 买入 token1 时：</p>
+        <ul style="font-size: 13px; padding-left: 20px;">
+          <li>token0 储备增加，token1 储备减少</li>
+          <li>由于乘积必须恒定，token1 的边际价格上升（滑点）</li>
+          <li>公式保证：交易后 <code>(reserve0 + amountIn) * (reserve1 - amountOut) >= k</code></li>
+        </ul>
+        <p>这就是 AMM 的定价机制：<strong>价格由池内储备比例决定</strong>，而非订单簿。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>4. 区块浏览器：你知道 etherscan.io 和如何读取 verified contract source</summary>
+      <div class="answer">
+        <p><strong>Etherscan</strong> 是以太坊区块链浏览器，可以：</p>
+        <ul style="font-size: 13px; padding-left: 20px;">
+          <li>查看交易、地址、合约源码</li>
+          <li>阅读已验证合约的 Solidity 源代码</li>
+          <li>查看合约的读写操作（Read/Write Contract）</li>
+          <li>追踪内部交易（Internal Txns）</li>
+        </ul>
+        <p>Foundry 测试中经常需要查主网合约地址（如 USDC/WETH/Router），Etherscan 是主要数据源。</p>
+      </div>
+    </details>
+
+    <!-- Part 1: Foundry 环境搭建 -->
+    <h2 id="part1">三、Foundry 环境搭建</h2>
+    <p>Foundry 是用 Rust 编写的以太坊开发工具链，包含四个核心命令：</p>
+    <table>
+      <tr><th>命令</th><th>用途</th></tr>
+      <tr><td><code>forge</code></td><td>编译、测试、部署合约（核心）</td></tr>
+      <tr><td><code>cast</code></td><td>读取链上数据、发送交易（CLI 链上交互）</td></tr>
+      <tr><td><code>anvil</code></td><td>本地以太坊节点（快速测试）</td></tr>
+      <tr><td><code>chisel</code></td><td>Solidity REPL（快速验证语法）</td></tr>
+    </table>
+
+    <h3>安装 Foundry</h3>
+    <pre>curl -L https://foundry.paradigm.xyz | bash
+foundryup</pre>
+
+    <h3>初始化项目</h3>
+    <pre>mkdir foundry-arbitrage && cd foundry-arbitrage
+forge init</pre>
+
+    <p>生成的目录结构：</p>
+    <pre>foundry-arbitrage/
+├── src/          # 合约源码
+│   └── Counter.sol
+├── test/         # 测试文件
+│   └── Counter.t.sol
+├── script/       # 部署脚本
+│   └── Counter.s.sol
+├── lib/          # 依赖（如 openzeppelin-contracts）
+└── foundry.toml  # 配置文件</pre>
+
+    <h3>常用命令</h3>
+    <pre>forge build          # 编译合约
+forge test           # 运行测试
+forge test -vvv      # 详细输出（3个v = 显示 event/emits）
+forge coverage       # 测试覆盖率
+cast call ...        # 读取合约状态（无需发送交易）</pre>
+
+    <div class="inline-quiz">
+      <p>Forge 的四个核心命令分别对应什么场景？</p>
+      <input type="text" id="iq1" placeholder="forge=__, cast=__, anvil=__, chisel=__">
+      <button onclick="checkInline('iq1', 'forge=compile,cast=readchain,anvil=localnode,chisel=solidityrepl', 'iq1-fb')">检验</button>
+      <div class="feedback" id="iq1-fb"></div>
+    </div>
+
+    <!-- Part 2: Solidity 快速入门 -->
+    <h2 id="part2">四、Solidity 快速入门 — 为以太坊研究者准备的速通</h2>
+    <p>跳过 EVM 基础（你已懂），直接覆盖编写合约必需的语言特性。</p>
+
+    <h3>1. 合约结构</h3>
+    <pre><span class="comment">// SPDX-License-Identifier: MIT</span>
+<span class="keyword">pragma solidity</span> ^0.8.20;
+
+<span class="comment">// contract: 可部署的合约（有状态、可以持有 ETH）</span>
+<span class="keyword">contract</span> <span class="type">MyContract</span> {
+    <span class="comment">// ...</span>
+}
+
+<span class="comment">// interface: 只定义函数签名，无实现（用于外部合约调用）</span>
+<span class="keyword">interface</span> <span class="type">IERC20</span> {
+    <span class="keyword">function</span> <span class="func">transfer</span>(address to, uint256 amount) <span class="keyword">external returns</span> (bool);
+}
+
+<span class="comment">// library: 无状态、不能持有 ETH，用于代码复用</span>
+<span class="keyword">library</span> <span class="type">SafeMath</span> {
+    <span class="keyword">function</span> <span class="func">add</span>(uint256 a, uint256 b) <span class="keyword">internal pure returns</span> (uint256) {
+        <span class="keyword">return</span> a + b;
+    }
+}</pre>
+
+    <h3>2. 数据类型</h3>
+    <pre><span class="keyword">uint256</span> public count;      <span class="comment">// 256-bit 无符号整数（最常用）</span>
+<span class="keyword">int256</span> public signed;       <span class="comment">// 256-bit 有符号整数</span>
+<span class="keyword">address</span> public owner;        <span class="comment">// 160-bit 地址（20 字节）</span>
+<span class="keyword">bytes32</span> public data;        <span class="comment">// 32 字节固定长度字节数组</span>
+<span class="keyword">bool</span> public active;          <span class="comment">// 布尔值</span>
+
+<span class="comment">// mapping: 哈希表（key => value）</span>
+<span class="keyword">mapping</span>(address => uint256) public balances;
+
+<span class="comment">// struct: 自定义结构体</span>
+<span class="keyword">struct</span> <span class="type">User</span> {
+    uint256 id;
+    address wallet;
+}
+
+<span class="comment">// enum: 枚举</span>
+<span class="keyword">enum</span> <span class="type">State</span> { Created, Active, Closed }</pre>
+
+    <h3>3. 数据位置：storage / memory / calldata</h3>
+    <div class="callout warn">
+      <strong>最关键的区别</strong>
+      <ul style="font-size: 13px; padding-left: 20px; margin-top: 8px;">
+        <li><code>storage</code> — 链上永久存储（昂贵，永久写入区块链）</li>
+        <li><code>memory</code> — 临时内存（函数执行期间存在，可修改）</li>
+        <li><code>calldata</code> — 只读临时内存（函数参数默认位置，不可修改，最省 gas）</li>
+      </ul>
+    </div>
+    <pre><span class="keyword">function</span> <span class="func">process</span>(<span class="keyword">uint256[] calldata</span> input) <span class="keyword">external</span> {
+    <span class="comment">// input 是 calldata，不能修改</span>
+    uint256[] memory temp = <span class="keyword">new</span> uint256[](input.length);  <span class="comment">// memory 可修改</span>
+    temp[0] = input[0];  <span class="comment">// OK</span>
+    <span class="comment">// input[0] = 1;  // ❌ 编译错误：calldata 不可修改</span>
+}</pre>
+
+    <h3>4. 函数可见性</h3>
+    <table>
+      <tr><th>关键字</th><th>可调用范围</th></tr>
+      <tr><td><code>external</code></td><td>仅外部（其他合约/EOA 通过交易调用）</td></tr>
+      <tr><td><code>public</code></td><td>外部 + 内部（合约内可调用）</td></tr>
+      <tr><td><code>internal</code></td><td>仅内部 + 继承合约</td></tr>
+      <tr><td><code>private</code></td><td>仅当前合约</td></tr>
+    </table>
+
+    <h3>5. 特殊变量</h3>
+    <pre><span class="comment">// msg.sender — 调用者地址（最常用）</span>
+<span class="comment">// tx.origin — 初始交易发起者（EOA，不安全，已弃用）</span>
+<span class="comment">// msg.value — 随交易发送的 ETH 数量（单位：wei）</span>
+<span class="comment">// block.timestamp — 当前区块时间戳</span>
+<span class="comment">// block.number — 当前区块号</span>
+
+<span class="keyword">function</span> <span class="func">whoIsCaller</span>() <span class="keyword">external view returns</span> (address) {
+    <span class="keyword">return</span> msg.sender;  <span class="comment">// 返回调用者地址</span>
+}</pre>
+
+    <div class="callout danger">
+      <strong>安全警告</strong>
+      <code>tx.origin</code> 用于认证会导致钓鱼攻击：恶意合约诱导用户调用 → tx.origin 仍是用户 → 通过认证。<strong>永远用 msg.sender 做认证</strong>。
+    </div>
+
+    <h3>6. payable / fallback / receive</h3>
+    <pre><span class="comment">// payable: 函数可以接收 ETH</span>
+<span class="keyword">function</span> <span class="func">deposit</span>() <span class="keyword">external payable</span> {
+    <span class="comment">// msg.value 是收到的 ETH 数量</span>
+}
+
+<span class="comment">// receive: 接收 ETH 的专用函数（无 calldata 时触发）</span>
+<span class="keyword">receive</span>() <span class="keyword">external payable</span> {}
+
+<span class="comment">// fallback: 未知函数调用时触发（用于代理合约等）</span>
+<span class="keyword">fallback</span>() <span class="keyword">external payable</span> {}</pre>
+
+    <h3>7. modifier 模式</h3>
+    <pre><span class="keyword">contract</span> <span class="type">Owned</span> {
+    address public owner;
+
+    <span class="keyword">modifier</span> <span class="func">onlyOwner</span>() {
+        require(msg.sender == owner, <span class="string">"not owner"</span>);
+        _;  <span class="comment">// 继续执行被修饰的函数</span>
+    }
+
+    <span class="keyword">constructor</span>() {
+        owner = msg.sender;
+    }
+
+    <span class="keyword">function</span> <span class="func">withdraw</span>() <span class="keyword">external onlyOwner</span> {
+        <span class="comment">// 只有 owner 能调用</span>
+        payable(owner).<span class="func">transfer</span>(address(<span class="keyword">this</span>).balance);
+    }
+}</pre>
+
+    <h3>8. event + emit</h3>
+    <pre><span class="keyword">contract</span> <span class="type">Emitter</span> {
+    <span class="comment">// 定义事件</span>
+    <span class="keyword">event</span> <span class="func">Transfer</span>(address indexed from, address indexed to, uint256 amount);
+
+    <span class="keyword">function</span> <span class="func">transfer</span>(address to, uint256 amount) <span class="keyword">external</span> {
+        <span class="comment">// ... 逻辑 ...</span>
+        <span class="comment">// 触发事件（写入链上日志，可被前端/indexer 监听）</span>
+        <span class="func">emit</span> <span class="func">Transfer</span>(msg.sender, to, amount);
+    }
+}</pre>
+
+    <div class="inline-quiz">
+      <p>msg.sender 和 tx.origin 在什么场景下会不同？</p>
+      <input type="text" id="iq2" placeholder="举例说明">
+      <button onclick="checkInline('iq2', 'useracontractbcontractc', 'iq2-fb')">检验</button>
+      <div class="feedback" id="iq2-fb"></div>
+    </div>
+
+    <!-- Part 3: UniswapV2 AMM 深度速通 -->
+    <h2 id="part3">五、UniswapV2 AMM 深度速通 + 接口分析</h2>
+
+    <h3>恒定乘积公式</h3>
+    <p>UniswapV2 使用 <code>x * y = k</code> 定价：</p>
+    <div class="compare">
+      <div class="compare-box">
+        <h4>交易前</h4>
+        <p style="font-size:13px">reserve0 = 100 ETH<br>reserve1 = 200000 USDC<br>k = 20,000,000</p>
+      </div>
+      <div class="compare-box">
+        <h4>买入 1 ETH 后</h4>
+        <p style="font-size:13px">reserve0 = 101 ETH<br>reserve1 = 200000 * 100 / 101 ≈ 198,019 USDC<br>价格 ≈ 1980 USDC/ETH</p>
+      </div>
+    </div>
+
+    <h3>核心合约接口</h3>
+    <pre><span class="comment">// IUniswapV2Pair.sol — 交易对合约接口</span>
+<span class="keyword">interface</span> <span class="type">IUniswapV2Pair</span> {
+    <span class="keyword">function</span> <span class="func">getReserves</span>() <span class="keyword">external view returns</span> (
+        uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast
+    );
+    <span class="keyword">function</span> <span class="func">swap</span>(
+        uint256 amount0Out, uint256 amount1Out,
+        address to, bytes calldata data
+    ) <span class="keyword">external</span>;
+    <span class="keyword">function</span> <span class="func">token0</span>() <span class="keyword">external view returns</span> (address);
+    <span class="keyword">function</span> <span class="func">token1</span>() <span class="keyword">external view returns</span> (address);
+}
+
+<span class="comment">// IUniswapV2Router02.sol — 路由合约接口（用户主要交互对象）</span>
+<span class="keyword">interface</span> <span class="type">IUniswapV2Router02</span> {
+    <span class="keyword">function</span> <span class="func">getAmountsOut</span>(uint256 amountIn, address[] memory path)
+        <span class="keyword">external view returns</span> (uint256[] memory amounts);
+
+    <span class="keyword">function</span> <span class="func">swapExactTokensForTokens</span>(
+        uint256 amountIn, uint256 amountOutMin,
+        address[] calldata path, address to, uint256 deadline
+    ) <span class="keyword">external returns</span> (uint256[] memory amounts);
+
+    <span class="keyword">function</span> <span class="func">swapExactTokensForETH</span>(
+        uint256 amountIn, uint256 amountOutMin,
+        address[] calldata path, address to, uint256 deadline
+    ) <span class="keyword">external</span>;
+}
+
+<span class="comment">// IWETH.sol — WETH 接口</span>
+<span class="keyword">interface</span> <span class="type">IWETH</span> {
+    <span class="keyword">function</span> <span class="func">deposit</span>() <span class="keyword">external payable</span>;
+    <span class="keyword">function</span> <span class="func">withdraw</span>(uint256 amount) <span class="keyword">external</span>;
+}</pre>
+
+    <h3>UniswapV2 闪电兑换 (Flash Swap)</h3>
+    <div class="callout">
+      <strong>核心特性</strong>
+      UniswapV2 的 flash swap 没有借贷金额上限，只要在同一个交易中 return 即可。这使它成为链上套利的理想工具：无需本金即可借出大额资产，套利后归还本息。
+    </div>
+    <p>Flash swap 流程：</p>
+    <ol style="font-size: 14px; padding-left: 20px; margin-bottom: 16px;">
+      <li>调用 <code>pair.swap(amount0Out, amount1Out, address(this), data)</code></li>
+      <li>Pair 合约将代币转给调用者（此时尚未检查还款）</li>
+      <li>如果 <code>data</code> 非空，Pair 回调 <code>uniswapV2Call(...)</code></li>
+      <li>在回调中执行套利逻辑</li>
+      <li>回调结束前，必须将借出的代币 + 0.3% 手续费转回 Pair</li>
+      <li>Pair 检查 reserve 是否满足恒定乘积 → 交易完成</li>
+    </ol>
+
+    <div class="inline-quiz">
+      <p>为什么 hardhat/foundry fork 测试中不需要真正的 ETH？</p>
+      <input type="text" id="iq3" placeholder="解释原因">
+      <button onclick="checkInline('iq3', 'forkmainnetstate', 'iq3-fb')">检验</button>
+      <div class="feedback" id="iq3-fb"></div>
+    </div>
+
+    <!-- Part 4: 三角套利合约实现 -->
+    <h2 id="part4">六、三角套利合约实现</h2>
+    <p>四种代币、三条路径的多跳套利：<code>USDC → WETH → DAI → USDC</code></p>
+
+    <h3>TriangularArbitrage.sol</h3>
+    <pre><span class="comment">// SPDX-License-Identifier: MIT</span>
+<span class="keyword">pragma solidity</span> ^0.8.20;
+
+<span class="keyword">import</span> <span class="string">"@openzeppelin/contracts/token/ERC20/IERC20.sol"</span>;
+<span class="keyword">import</span> <span class="string">"./interfaces/IUniswapV2Router02.sol"</span>;
+<span class="keyword">import</span> <span class="string">"./interfaces/IWETH.sol"</span>;
+
+<span class="keyword">contract</span> <span class="type">TriangularArbitrage</span> {
+    address public owner;
+    IUniswapV2Router02 public router;
+    IWETH public weth;
+
+    <span class="keyword">modifier</span> <span class="func">onlyOwner</span>() {
+        require(msg.sender == owner, <span class="string">"not owner"</span>);
+        _;
+    }
+
+    <span class="keyword">constructor</span>(address _router, address _weth) {
+        owner = msg.sender;
+        router = IUniswapV2Router02(_router);
+        weth = IWETH(_weth);
+    }
+
+    <span class="comment">/// @notice Execute a 3-pool triangular arbitrage</span>
+    <span class="comment">/// @param path The swap path: [tokenIn, tokenMid, tokenOut]</span>
+    <span class="comment">/// @param amountIn The input amount of tokenIn</span>
+    <span class="keyword">function</span> <span class="func">execute</span>(
+        address[] <span class="keyword">calldata</span> path,
+        uint256 amountIn
+    ) <span class="keyword">external onlyOwner returns</span> (uint256) {
+        require(path.length == 3, <span class="string">"need 3 tokens"</span>);
+
+        <span class="comment">// Step 1: Pull tokenIn from caller (must approve first)</span>
+        IERC20(path[0]).<span class="func">transferFrom</span>(msg.sender, address(<span class="keyword">this</span>), amountIn);
+
+        <span class="comment">// Step 2: First swap: path[0] -> path[1]</span>
+        _approveToken(path[0], amountIn);
+        address[] <span class="keyword">memory</span> path1 = <span class="keyword">new</span> address[](2);
+        path1[0] = path[0];
+        path1[1] = path[1];
+        uint256 midAmount = router.<span class="func">swapExactTokensForTokens</span>(
+            amountIn, 0, path1, address(<span class="keyword">this</span>), block.timestamp
+        )[1];
+
+        <span class="comment">// Step 3: Second swap: path[1] -> path[2]</span>
+        _approveToken(path[1], midAmount);
+        address[] <span class="keyword">memory</span> path2 = <span class="keyword">new</span> address[](2);
+        path2[0] = path[1];
+        path2[1] = path[2];
+        uint256 outputAmount = router.<span class="func">swapExactTokensForTokens</span>(
+            midAmount, 0, path2, address(<span class="keyword">this</span>), block.timestamp
+        )[1];
+
+        <span class="comment">// Step 4: Check profit</span>
+        require(outputAmount > amountIn, <span class="string">"no profit"</span>);
+
+        <span class="comment">// Step 5: Return profit to caller</span>
+        IERC20(path[2]).<span class="func">transfer</span>(msg.sender, outputAmount);
+        <span class="keyword">return</span> outputAmount;
+    }
+
+    <span class="keyword">function</span> <span class="func">_approveToken</span>(address token, uint256 amount) <span class="keyword">internal</span> {
+        IERC20(token).<span class="func">approve</span>(address(router), amount);
+    }
+}</pre>
+
+    <div class="callout danger">
+      <strong>安全问题分析</strong>
+      <ol style="font-size: 13px; padding-left: 20px; margin-top: 8px;">
+        <li><strong>没有滑点保护</strong>：<code>amountOutMin = 0</code> → 被 sandwich attack</li>
+        <li><strong>临时资产集中在合约内</strong>：如果合约被攻击，所有资产可被抽走</li>
+        <li><strong>_approveToken 每次 approval 没有重置前值</strong>：可能导致 approval 累积问题（虽然 ERC-20 标准允许覆盖）</li>
+      </ol>
+    </div>
+
+    <div class="inline-quiz">
+      <p>TriangularArbitrage.execute() 合约有什么安全问题？</p>
+      <input type="text" id="iq4" placeholder="至少列出 2 个">
+      <button onclick="checkInline('iq4', 'slippageprotection', 'iq4-fb')">检验</button>
+      <div class="feedback" id="iq4-fb"></div>
+    </div>
+
+    <!-- Part 5: Foundry Fork 测试 -->
+    <h2 id="part5">七、Foundry Fork 测试</h2>
+    <p>Fork 测试原理：复制主网状态到本地，模拟交易执行，无需真正发送主网交易。</p>
+
+    <h3>TriangularArbitrage Test</h3>
+    <pre><span class="comment">// SPDX-License-Identifier: MIT</span>
+<span class="keyword">pragma solidity</span> ^0.8.20;
+
+<span class="keyword">import</span> <span class="string">"forge-std/Test.sol"</span>;
+<span class="keyword">import</span> <span class="string">"../src/TriangularArbitrage.sol"</span>;
+<span class="keyword">import</span> <span class="string">"@openzeppelin/contracts/token/ERC20/IERC20.sol"</span>;
+
+<span class="keyword">contract</span> <span class="type">TriangularArbitrageTest</span> <span class="keyword">is</span> Test {
+    <span class="comment">// 使用主网 fork: USDC/WETH/DAI 池在 mainnet</span>
+    address <span class="keyword">constant</span> USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
+    address <span class="keyword">constant</span> WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+    address <span class="keyword">constant</span> DAI  = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
+    <span class="comment">// Uniswap V2 Router on mainnet</span>
+    address <span class="keyword">constant</span> ROUTER = 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D;
+
+    TriangularArbitrage arb;
+    address user = makeAddr(<span class="string">"user"</span>);
+
+    <span class="keyword">function</span> <span class="func">setUp</span>() <span class="keyword">public</span> {
+        <span class="comment">// fork 主网</span>
+        vm.<span class="func">createSelectFork</span>(<span class="string">"mainnet"</span>);
+
+        arb = <span class="keyword">new</span> TriangularArbitrage(ROUTER, WETH);
+
+        <span class="comment">// 给 user 1000 USDC（从巨鲸地址转）</span>
+        vm.<span class="func">deal</span>(USDC, user, 1000e6);
+    }
+
+    <span class="keyword">function</span> <span class="func">testTriangleArbitrage</span>() <span class="keyword">public</span> {
+        vm.<span class="func">startPrank</span>(user);
+        IERC20(USDC).<span class="func">approve</span>(address(arb), 1000e6);
+
+        <span class="comment">// 预期路径: USDC -> WETH -> DAI -> USDC</span>
+        <span class="comment">// 但合约只做两个 swap，所以路径是 [USDC, WETH, DAI]</span>
+        <span class="comment">// 注意实际路径验证需要校验是否盈利</span>
+        vm.<span class="func">expectRevert</span>(<span class="string">"no profit"</span>);
+        arb.<span class="func">execute</span>([USDC, WETH, DAI], 100e6);
+        vm.<span class="func">stopPrank</span>();
+    }
+}</pre>
+
+    <h3>关键 Cheatcode 解释</h3>
+    <table>
+      <tr><th>Cheatcode</th><th>用途</th></tr>
+      <tr><td><code>vm.createSelectFork(urlOrAlias)</code></td><td>创建并选择主网 fork</td></tr>
+      <tr><td><code>vm.prank(address)</code></td><td>临时设置 msg.sender（单次调用）</td></tr>
+      <tr><td><code>vm.startPrank(address)</code></td><td>开始 prank（多笔调用）</td></tr>
+      <tr><td><code>vm.stopPrank()</code></td><td>结束 prank</td></tr>
+      <tr><td><code>deal(token, address, amount)</code></td><td>设置代币余额（修改存储）</td></tr>
+      <tr><td><code>vm.expectRevert(expectedError)</code></td><td>断言下一笔调用 revert</td></tr>
+    </table>
+
+    <div class="inline-quiz">
+      <p>vm.createSelectFork 和 vm.createFork 什么区别？</p>
+      <input type="text" id="iq5" placeholder="解释区别">
+      <button onclick="checkInline('iq5', 'createselectfork=createfork+selectfork', 'iq5-fb')">检验</button>
+      <div class="feedback" id="iq5-fb"></div>
+    </div>
+
+    <!-- Part 6: 闪电贷套利合约 -->
+    <h2 id="part6">八、闪电贷套利合约实现</h2>
+    <p><strong>核心思路</strong>：不需要预先投入本金，从 Uniswap V2 Pair 中闪电借贷大额资产，跨 DEX 套利后归还。</p>
+
+    <h3>FlashSwapArbitrage.sol</h3>
+    <pre><span class="comment">// SPDX-License-Identifier: MIT</span>
+<span class="keyword">pragma solidity</span> ^0.8.20;
+
+<span class="keyword">import</span> <span class="string">"@openzeppelin/contracts/token/ERC20/IERC20.sol"</span>;
+<span class="keyword">import</span> <span class="string">"./interfaces/IUniswapV2Pair.sol"</span>;
+<span class="keyword">import</span> <span class="string">"./interfaces/IUniswapV2Router02.sol"</span>;
+<span class="keyword">import</span> <span class="string">"./interfaces/IUniswapV2Callee.sol"</span>;
+<span class="keyword">import</span> <span class="string">"./interfaces/IWETH.sol"</span>;
+
+<span class="keyword">contract</span> <span class="type">FlashSwapArbitrage</span> <span class="keyword">is</span> IUniswapV2Callee {
+    IUniswapV2Router02 public uniRouter;
+    IUniswapV2Router02 public sushiRouter;
+    IWETH public weth;
+
+    <span class="keyword">constructor</span>(address _uniRouter, address _sushiRouter, address _weth) {
+        uniRouter = IUniswapV2Router02(_uniRouter);
+        sushiRouter = IUniswapV2Router02(_sushiRouter);
+        weth = IWETH(_weth);
+    }
+
+    <span class="comment">/// @notice Initiate flash swap arbitrage</span>
+    <span class="comment">/// @param pair The UniswapV2 Pair to flash loan from</span>
+    <span class="comment">/// @param flashToken The ERC-20 token address to borrow</span>
+    <span class="comment">/// @param flashAmount The amount to borrow</span>
+    <span class="comment">/// @param profitToken The token to receive profit in</span>
+    <span class="keyword">function</span> <span class="func">startArbitrage</span>(
+        address pair,
+        address flashToken,
+        uint256 flashAmount,
+        address profitToken
+    ) <span class="keyword">external</span> {
+        IUniswapV2Pair uniPair = IUniswapV2Pair(pair);
+        (uint112 reserve0, uint112 reserve1, ) = uniPair.<span class="func">getReserves</span>();
+        address token0 = uniPair.<span class="func">token0</span>();
+        address token1 = uniPair.<span class="func">token1</span>();
+
+        (uint256 amount0Out, uint256 amount1Out) =
+            flashToken == token0 ? (flashAmount, uint256(0)) : (uint256(0), flashAmount);
+
+        <span class="comment">// Encode profit token into callback data</span>
+        bytes <span class="keyword">memory</span> data = abi.<span class="func">encode</span>(profitToken);
+
+        <span class="comment">// Trigger flash swap: Uniswap will call uniswapV2Call</span>
+        uniPair.<span class="func">swap</span>(amount0Out, amount1Out, address(<span class="keyword">this</span>), data);
+    }
+
+    <span class="comment">/// @notice UniswapV2 callback — execute arbitrage here</span>
+    <span class="keyword">function</span> <span class="func">uniswapV2Call</span>(
+        address sender,
+        uint256 amount0,
+        uint256 amount1,
+        bytes <span class="keyword">calldata</span> data
+    ) <span class="keyword">external override</span> {
+        <span class="comment">// Decode profit token from data</span>
+        address profitToken = abi.<span class="func">decode</span>(data, (address));
+
+        <span class="comment">// Identify the borrowed token</span>
+        address token0 = IUniswapV2Pair(msg.sender).<span class="func">token0</span>();
+        address token1 = IUniswapV2Pair(msg.sender).<span class="func">token1</span>();
+
+        address flashToken = amount0 > 0 ? token0 : token1;
+        uint256 flashAmount = amount0 > 0 ? amount0 : amount1;
+
+        <span class="comment">// Step 1: Arbitrage on SushiSwap</span>
+        IERC20(flashToken).<span class="func">approve</span>(address(sushiRouter), flashAmount);
+        address[] <span class="keyword">memory</span> path = <span class="keyword">new</span> address[](2);
+        path[0] = flashToken;
+        path[1] = profitToken;
+        uint256 profitAmount = sushiRouter.<span class="func">swapExactTokensForTokens</span>(
+            flashAmount, 0, path, address(<span class="keyword">this</span>), block.timestamp
+        )[1];
+
+        <span class="comment">// Step 2: Calculate repay amount: flashAmount + 0.3% fee</span>
+        uint256 repayAmount = flashAmount + (flashAmount * 3) / 997;
+
+        <span class="comment">// Step 3: Buy back enough flashToken to repay</span>
+        IERC20(profitToken).<span class="func">approve</span>(address(sushiRouter), profitAmount);
+        path[0] = profitToken;
+        path[1] = flashToken;
+        uint256 flashTokenReceived = sushiRouter.<span class="func">swapExactTokensForTokens</span>(
+            profitAmount, repayAmount, path, address(<span class="keyword">this</span>), block.timestamp
+        )[1];
+
+        require(flashTokenReceived >= repayAmount, <span class="string">"insufficient to repay"</span>);
+
+        <span class="comment">// Step 4: Repay the flash loan pair</span>
+        IERC20(flashToken).<span class="func">transfer</span>(msg.sender, repayAmount);
+
+        <span class="comment">// Remaining profit (in profitToken) stays in this contract</span>
+    }
+}</pre>
+
+    <div class="callout warn">
+      <strong>安全考虑</strong>
+      <ul style="font-size: 13px; padding-left: 20px; margin-top: 8px;">
+        <li><code>uniswapV2Call</code> 中的 <code>msg.sender</code> 是 pair 合约地址，需要验证 pair 是合法的 UniswapV2 pair</li>
+        <li>Flash swap 本身就是重入，利用重入获得借出资产。需小心不要被外部二次重入攻击</li>
+        <li>gas 估算：两次 swap + 一次 transfer 约 200k-400k gas</li>
+      </ul>
+    </div>
+
+    <div class="inline-quiz">
+      <p>闪电贷套利的最大风险是什么？</p>
+      <input type="text" id="iq6" placeholder="列出至少 2 个风险">
+      <button onclick="checkInline('iq6', 'profitlessthanfee', 'iq6-fb')">检验</button>
+      <div class="feedback" id="iq6-fb"></div>
+    </div>
+
+    <!-- Part 7: 闪电贷 Fork 测试 -->
+    <h2 id="part7">九、Foundry 测试 — 闪电贷完整 Fork 测试</h2>
+    <pre><span class="comment">// SPDX-License-Identifier: MIT</span>
+<span class="keyword">pragma solidity</span> ^0.8.20;
+
+<span class="keyword">import</span> <span class="string">"forge-std/Test.sol"</span>;
+<span class="keyword">import</span> <span class="string">"../src/FlashSwapArbitrage.sol"</span>;
+<span class="keyword">import</span> <span class="string">"@openzeppelin/contracts/token/ERC20/IERC20.sol"</span>;
+
+<span class="keyword">contract</span> <span class="type">FlashSwapArbitrageTest</span> <span class="keyword">is</span> Test {
+    <span class="comment">// Mainnet addresses</span>
+    address <span class="keyword">constant</span> UNI_ROUTER = 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D;
+    address <span class="keyword">constant</span> SUSHI_ROUTER = 0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F;
+    address <span class="keyword">constant</span> WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+    address <span class="keyword">constant</span> USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
+    <span class="comment">// WETH/USDC pair on UniswapV2</span>
+    address <span class="keyword">constant</span> WETH_USDC_PAIR = 0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc;
+
+    FlashSwapArbitrage arb;
+
+    <span class="keyword">function</span> <span class="func">setUp</span>() <span class="keyword">public</span> {
+        vm.<span class="func">createSelectFork</span>(<span class="string">"mainnet"</span>);
+        arb = <span class="keyword">new</span> FlashSwapArbitrage(UNI_ROUTER, SUSHI_ROUTER, WETH);
+    }
+
+    <span class="keyword">function</span> <span class="func">testFlashSwapArbitrage</span>() <span class="keyword">public</span> {
+        <span class="comment">// Flash loan 100 WETH from Uni V2 WETH/USDC pair</span>
+        arb.<span class="func">startArbitrage</span>(WETH_USDC_PAIR, WETH, 100e18, USDC);
+
+        <span class="comment">// Check profit in USDC remains in contract</span>
+        uint256 balance = IERC20(USDC).<span class="func">balanceOf</span>(address(arb));
+        <span class="func">emit</span> log_named_uint(<span class="string">"Profit (USDC)"</span>, balance);
+        assertGt(balance, 0, <span class="string">"should have profitable arbitrage"</span>);
+    }
+}</pre>
+
+    <div class="inline-quiz">
+      <p>flash loan 为什么不需要 collateral？</p>
+      <input type="text" id="iq7" placeholder="解释原因">
+      <button onclick="checkInline('iq7', 'atomictransaction', 'iq7-fb')">检验</button>
+      <div class="feedback" id="iq7-fb"></div>
+    </div>
+
+    <!-- Part 8: 部署 + Gas 优化 -->
+    <h2 id="part8">十、部署 + Gas 优化</h2>
+
+    <h3>1. forge script 部署</h3>
+    <pre>forge create TriangularArbitrage \
+  --rpc-url $RPC_URL \
+  --private-key $PK \
+  --constructor-args $ROUTER $WETH</pre>
+
+    <h3>2. Gas 优化技巧</h3>
+    <table>
+      <tr><th>技巧</th><th>说明</th></tr>
+      <tr><td><code>calldata</code> vs <code>memory</code></td><td>参数用 <code>calldata</code> 比 <code>memory</code> 省 gas（无需复制）</td></tr>
+      <tr><td>SSTORE 成本</td><td>首次 20,000 gas，后续 5,000 gas，重置返还 15,000</td></tr>
+      <tr><td>Cached storage reads</td><td><code>uint256 cached = balance;</code> 减少 SLOAD（每次 100 gas）</td></tr>
+      <tr><td><code>unchecked</code> 块</td><td>在确定不会 overflow 时用（Solidity 0.8+ 默认检查溢出）</td></tr>
+    </table>
+
+    <h3>3. 验证合约</h3>
+    <pre>forge verify-contract $CONTRACT_ADDR TriangularArbitrage \
+  --etherscan-api-key $API_KEY \
+  --chain-id 1</pre>
+
+    <!-- 面试话术 -->
+    <h2 id="interview">十一、面试话术</h2>
+    <div class="callout success">
+      <strong>高频问题</strong>
+      "你做过链上智能合约开发吗？能讲一个从设计到部署的完整案例吗？"
+    </div>
+    <p><strong>标准答法（60秒版本）：</strong></p>
+    <p>我在准备 DeFi Agent 开发的过程中，用 Solidity + Foundry 实现了一个 DEX 三角套利 + 闪电贷套利系统。整个项目分为两个部分：第一，TriangularArbitrage 合约，实现 USDC → WETH → DAI → USDC 的多跳套利，核心是调用 UniswapV2 Router 的 swapExactTokensForTokens 完成路径交换；第二，FlashSwapArbitrage 合约，利用 UniswapV2 的闪电兑换（flash swap）在无本金的情况下借出大额资产，跨 DEX（Uniswap → SushiSwap）套利后归还。测试方面，我使用 Foundry 的 fork 测试模式，复制主网状态来验证套利逻辑，避免了在主网真实部署的高成本。这个项目让我深入理解了 AMM 恒定乘积机制、闪电贷的原子性保证、以及 Solidity 的 gas 优化技巧。后续我计划把链上数据读取封装为 MCP tool，让 AI agent 能自动发现套利机会。</p>
+
+    <div class="callout warn">
+      <strong>面试追问预案</strong>
+      <ul style="font-size: 13px; padding-left: 20px; margin-top: 8px;">
+        <li><strong>Q: 闪电贷的 atomic 性怎么保证？</strong> A: 闪电贷借和还是在同一个交易内完成。如果套利失败、还不上钱，整个交易 revert，pair 资产不受损失。这是 EVM 的原子性保证的。</li>
+        <li><strong>Q: 你怎么防止 sandwich attack？</strong> A: 在 swap 时传入 amountOutMin 参数（滑点保护），并在链下用 getAmountsOut 预计算最小接收量。同时可以设置 deadline 防止交易被延迟执行。</li>
+        <li><strong>Q: Foundry 和 Hardhat 你选哪个？为什么？</strong> A: 我选 Foundry，因为纯 Solidity 测试比 JavaScript 测试更快、类型更安全，且 forge 的 fuzz 测试和 fork 测试非常强大。Hardhat 的生态更成熟，但 Foundry 的开发者体验更好。</li>
+      </ul>
+    </div>
+
+    <!-- Primary Source -->
+    <div class="primary-source">
+      <div class="label">本课首选资源</div>
+      <div class="title"><a href="https://book.getfoundry.sh" target="_blank">Foundry Book</a></div>
+      <div class="desc">Foundry 官方文档，包含完整的 cheatcode 手册、forge test 详解、fork 测试教程。写完本课合约后建议通读（1-2 小时）。</div>
+    </div>
+
+    <div class="primary-source">
+      <div class="label">参考资源</div>
+      <div class="title"><a href="https://github.com/Uniswap/v2-core" target="_blank">Uniswap V2 Core Solidity</a></div>
+      <div class="desc">Uniswap V2 Pair/Router 源码，建议与本课合约对比阅读，理解 AMM 底层实现。</div>
+    </div>
+
+    <div class="primary-source">
+      <div class="label">进阶阅读</div>
+      <div class="title"><a href="https://arxiv.org/abs/1904.05234" target="_blank">Flash Boys 2.0 (Daian et al., IEEE S&P 2020)</a></div>
+      <div class="desc">你 NDSS 同行出品的 MEV 论文，与本课实践对应。讲解抢跑、三明治攻击等链上套利现象。</div>
+    </div>
+
+    <!-- Quiz -->
+    <div class="quiz-section" id="quiz">
+      <h2>十二、检索练习</h2>
+      <p style="font-family:sans-serif;font-size:13px;color:#64748b;margin-bottom:20px">不看上方内容，凭记忆回答。答错不扣分，只是帮你定位记忆空白。</p>
+
+      <div class="quiz-q" id="q1">
+        <p>1. Uniswap V2 的 swap() 函数执行完成后，pair 合约如何确保你归还了资产？</p>
+        <div class="quiz-options">
+          <button class="quiz-opt" onclick="answer('q1','A')">A. 检查调用者的 token 余额是否减少</button>
+          <button class="quiz-opt" onclick="answer('q1','B')">B. pair 在回调后检查 reserve0 * reserve1 >= k，即恒定乘积不降反升</button>
+          <button class="quiz-opt" onclick="answer('q1','C')">C. 调用者的 approve 额度必须足够</button>
+          <button class="quiz-opt" onclick="answer('q1','D')">D. 检查交易是否包含足够的 ETH 作为手续费</button>
+        </div>
+        <div class="quiz-feedback" id="q1-fb">pair 在回调后检查 reserve0 * reserve1 >= k。你的还款加了 0.3% fee，乘积一定变大。这是 AMM 的核心安全机制：恒定乘积必须保持或增加。</div>
+      </div>
+
+      <div class="quiz-q" id="q2">
+        <p>2. TriangularArbitrage.execute() 合约中使用 amountOutMin = 0 有什么风险？如何修复？</p>
+        <div class="quiz-options">
+          <button class="quiz-opt" onclick="answer('q2','A')">A. 风险：gas 浪费；修复：使用 gas price 限制</button>
+          <button class="quiz-opt" onclick="answer('q2','B')">B. 风险：slippage 攻击 / sandwich attack；修复：传入 amountOutMin 参数，从链下报价计算</button>
+          <button class="quiz-opt" onclick="answer('q2','C')">C. 风险：合约无法编译；修复：添加 fallback 函数</button>
+          <button class="quiz-opt" onclick="answer('q2','D')">D. 风险：ETH 丢失；修复：添加 receive() 函数</button>
+        </div>
+        <div class="quiz-feedback" id="q2-fb">amountOutMin = 0 意味着接受任何价格的 swap，攻击者可以通过 sandwich attack 让你以极差的价格成交。修复方法：在 swap 前调用 getAmountsOut 计算预期输出，设置合理的 slippage tolerance（如 0.5%）。</div>
+      </div>
+
+      <div class="quiz-q" id="q3">
+        <p>3. Foundry 中 vm.assume() 和 vm.expectRevert() 各有什么用途？</p>
+        <div class="quiz-options">
+          <button class="quiz-opt" onclick="answer('q3','A')">A. vm.assume() 用于 fuzz 测试跳过无效输入；vm.expectRevert() 断言下一笔调用 revert</button>
+          <button class="quiz-opt" onclick="answer('q3','B')">B. vm.assume() 断言下一笔调用 revert；vm.expectRevert() 用于 fuzz 测试跳过无效输入</button>
+          <button class="quiz-opt" onclick="answer('q3','C')">C. 两者都是用于设置 gas 限制的</button>
+          <button class="quiz-opt" onclick="answer('q3','D')">D. 两者都是用于模拟链上时间的</button>
+        </div>
+        <div class="quiz-feedback" id="q3-fb">vm.assume(condition) 在 fuzz 测试中用于跳过不满足条件的输入（如假设输入大于 0）。vm.expectRevert(expectedError) 用于断言下一笔合约调用会 revert，常用来测试 require 条件。</div>
+      </div>
+
+      <div class="quiz-q" id="q4">
+        <p>4. 闪电贷合约的 uniswapV2Call 回调中，如何防止被非预期外部合约调用？</p>
+        <div class="quiz-options">
+          <button class="quiz-opt" onclick="answer('q4','A')">A. 使用 onlyOwner modifier</button>
+          <button class="quiz-opt" onclick="answer('q4','B')">B. 验证 msg.sender 是已知的合法 pair 地址，或验证 pair 的 factory 是 UniswapV2 factory</button>
+          <button class="quiz-opt" onclick="answer('q4','C')">C. 在回调中检查 msg.value 是否大于 0</button>
+          <button class="quiz-opt" onclick="answer('q4','D')">D. 使用 view 函数修饰符</button>
+        </div>
+        <div class="quiz-feedback" id="q4-fb">uniswapV2Call 是公开函数，任何人都可以调用。必须在函数开头验证 msg.sender 是合法的 UniswapV2 pair 地址（通过硬编码白名单或验证 pair.factory() 返回正确的 factory 地址）。</div>
+      </div>
+
+      <div class="quiz-q" id="q5">
+        <p>5. 为什么闪电贷合约中用完 flashAmount 买了 profitToken，还要再花钱买回 flashToken 还回去？能不能直接拿借来的 flashToken 套利后只把利润抽走？</p>
+        <div class="quiz-options">
+          <button class="quiz-opt" onclick="answer('q5','A')">A. 可以，只要利润足够覆盖手续费即可</button>
+          <button class="quiz-opt" onclick="answer('q5','B')">B. 不能，因为你借的是 flashToken，还的必须是 flashToken（加手续费）。必须套利获利后用利润的一部分买回 flashToken 归还</button>
+          <button class="quiz-opt" onclick="answer('q5','C')">C. 可以直接还 profitToken，Uniswap 会自动转换</button>
+          <button class="quiz-opt" onclick="answer('q5','D')">D. 需要在套利前先 approve profitToken 给 pair</button>
+        </div>
+        <div class="quiz-feedback" id="q5-fb">因为你借的是 flashToken，还的必须是 flashToken（加 0.3% 手续费）。你不能凭空多出 flashToken，所以必须套利获利后用利润的一部分买回 flashToken 归还，剩下的才是净盈利。整个过程中 profitToken 作为中间锚定资产。</div>
+      </div>
+
+      <div id="quiz-total-score" class="quiz-score"></div>
+    </div>
+
+    <!-- 下课建议 -->
+    <h2>课后首要行动</h2>
+    <ol style="padding-left:20px;font-size:15px;line-height:2">
+      <li><strong>部署 + 验证</strong>：在 Goerli/Sepolia 测试网部署你的 TriangularArbitrage 合约，并用 etherscan 验证源码。在 GitHub 创建一个 foundry-arbitrage-bot 仓库提交代码。（30 分钟）</li>
+      <li><strong>跑通 fork 测试</strong>：在 foundry.toml 中配置 [rpc_endpoints] 填入你的 Infura/Alchemy mainnet RPC，跑通闪电贷 fork 测试并截图利润输出。（20 分钟）</li>
+      <li><strong>扩展挑战</strong>：将三角套利从 3-pool 扩展到 4-pool 循环（USDC -> WETH -> DAI -> USDT -> USDC），实现任意长度 path 的通用三角套利合约。（1 小时）</li>
+      <li><strong>安全加固</strong>：给 TriangularArbitrage.execute() 添加 amountOutMin 滑点保护参数，并添加 onlyEOA modifier 保护 startArbitrage() 入口。（30 分钟）</li>
+      <li><strong>学习记录</strong>：在 learning-records/0021-dex-arbitrage-flashloan.md 记录学习总结和卡点。（10 分钟）</li>
+    </ol>
+
+    <div class="ask-me">
+      <strong>有问题？直接问你的老师。</strong><br>
+      对 Solidity 的 storage/memory/calldata 区别、UniswapV2 滑点计算、闪电贷回调机制有疑问？在对话框里问，马上解答。
+    </div>
+
+    <div class="nav-links">
+      <a href="0020-batch-import-optimizer.html">← Lesson 20: 批量导入优化</a>
+      <span style="color:#94a3b8">Lesson 22 coming next →</span>
+    </div>
+  </main>
+</div>
+
+<script>
+  const answers = { q1:'B', q2:'B', q3:'A', q4:'B', q5:'B' };
+  const scores = {};
+
+  function answer(qid, choice) {
+    const opts = document.querySelectorAll(`#${qid} .quiz-opt`);
+    opts.forEach(o => o.disabled = true);
+    const selected = opts[['A','B','C','D'].indexOf(choice)];
+    const correct = answers[qid];
+    if (choice === correct) {
+      selected.classList.add('correct');
+      scores[qid] = 1;
+    } else {
+      selected.classList.add('wrong');
+      opts[['A','B','C','D'].indexOf(correct)].classList.add('correct');
+      scores[qid] = 0;
+    }
+    const fb = document.getElementById(`${qid}-fb`);
+    fb.style.display = 'block';
+    updateTotal();
+  }
+
+  function updateTotal() {
+    const total = Object.keys(answers).length;
+    const got = Object.values(scores).reduce((a,b)=>a+b,0);
+    if (Object.keys(scores).length === total) {
+      const el = document.getElementById('quiz-total-score');
+      el.style.display = 'block';
+      el.textContent = `得分：${got}/${total}`;
+      el.className = 'quiz-score ' + (got >= 4 ? 'good' : 'ok');
+    }
+  }
+
+  function checkInline(inputId, expected, fbId) {
+    const val = document.getElementById(inputId).value.trim().toLowerCase().replace(/\s+/g,'');
+    const exp = expected.toLowerCase().replace(/\s+/g,'');
+    const fb = document.getElementById(fbId);
+    fb.style.display = 'block';
+    if (val === exp || val.includes(exp)) {
+      fb.className = 'feedback ok';
+      fb.textContent = '✓ 正确';
+    } else {
+      fb.className = 'feedback bad';
+      fb.textContent = `✗ 答案参考：${expected}`;
+    }
+  }
+</script>
+</body>
+</html>
