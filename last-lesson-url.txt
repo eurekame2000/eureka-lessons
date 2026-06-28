@@ -1,1 +1,1 @@
-https://eurekame2000.github.io/eureka-lessons/lessons/0023-spring-boot-autoconfiguration.html
+https://eurekame2000.github.io/eureka-lessons/lessons/0024-spring-ioc-container-bean-lifecycle.html

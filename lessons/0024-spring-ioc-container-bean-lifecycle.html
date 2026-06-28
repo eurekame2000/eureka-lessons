@@ -1,0 +1,1144 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 24 — Spring IoC容器原理 + Bean生命周期</title>
+  <style>
+    :root {
+      --bg: #fafaf8;
+      --text: #1a1a1a;
+      --accent: #2563eb;
+      --accent-light: #eff6ff;
+      --border: #e2e8f0;
+      --code-bg: #f1f5f9;
+      --success: #16a34a;
+      --success-light: #f0fdf4;
+      --warn: #d97706;
+      --warn-light: #fffbeb;
+      --danger: #dc2626;
+      --danger-light: #fef2f2;
+      --sidebar: #1e293b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Georgia', serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+    }
+    .layout { display: flex; min-height: 100vh; }
+    nav {
+      width: 220px;
+      background: var(--sidebar);
+      color: #94a3b8;
+      padding: 32px 0;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      flex-shrink: 0;
+    }
+    nav h3 { color: #f1f5f9; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; padding: 0 20px 12px; }
+    nav a { display: block; padding: 6px 20px; color: #94a3b8; text-decoration: none; font-size: 13px; font-family: sans-serif; }
+    nav a:hover { color: #f1f5f9; background: rgba(255,255,255,0.05); }
+    nav .nav-section { margin-bottom: 20px; }
+    main { flex: 1; max-width: 780px; padding: 56px 64px; }
+    .lesson-meta { font-family: sans-serif; font-size: 12px; color: #64748b; margin-bottom: 32px; }
+    .lesson-meta span { margin-right: 16px; }
+    h1 { font-size: 32px; font-weight: 700; margin-bottom: 8px; line-height: 1.2; }
+    h2 { font-size: 20px; font-weight: 700; margin: 40px 0 12px; padding-bottom: 6px; border-bottom: 2px solid var(--border); }
+    h3 { font-size: 16px; font-weight: 700; margin: 24px 0 8px; color: #334155; }
+    p { margin-bottom: 14px; }
+    a { color: var(--accent); }
+    code { font-family: 'Menlo', 'Monaco', monospace; font-size: 13px; background: var(--code-bg); padding: 2px 5px; border-radius: 3px; }
+    pre {
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 20px 24px;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin: 16px 0;
+      font-family: 'Menlo', 'Monaco', monospace;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    pre .comment { color: #64748b; }
+    pre .keyword { color: #93c5fd; }
+    pre .string { color: #86efac; }
+    pre .func { color: #fde68a; }
+    pre .type { color: #f9a8d4; }
+    pre .annotation { color: #c4b5fd; }
+    .callout {
+      border-left: 4px solid var(--accent);
+      background: var(--accent-light);
+      padding: 14px 18px;
+      margin: 20px 0;
+      border-radius: 0 6px 6px 0;
+      font-size: 14px;
+    }
+    .callout.warn { border-color: var(--warn); background: var(--warn-light); }
+    .callout.success { border-color: var(--success); background: var(--success-light); }
+    .callout.danger { border-color: var(--danger); background: var(--danger-light); }
+    .callout strong { display: block; margin-bottom: 4px; font-family: sans-serif; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .compare {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin: 16px 0;
+    }
+    .compare-box { background: var(--code-bg); border-radius: 8px; padding: 14px; }
+    .compare-box h4 { font-family: sans-serif; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; color: #64748b; }
+    table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px; font-family: sans-serif; }
+    th { background: var(--code-bg); text-align: left; padding: 8px 12px; border-bottom: 2px solid var(--border); font-size: 12px; }
+    td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    tr:hover td { background: var(--accent-light); }
+
+    /* Quiz */
+    .quiz-section { background: var(--code-bg); border-radius: 10px; padding: 24px; margin: 32px 0; }
+    .quiz-section h2 { border: none; margin-top: 0; }
+    .quiz-q { margin-bottom: 24px; }
+    .quiz-q p { font-weight: 600; margin-bottom: 10px; font-size: 15px; }
+    .quiz-options { display: grid; gap: 8px; }
+    .quiz-opt { display: block; background: white; border: 2px solid var(--border); border-radius: 6px; padding: 10px 14px; cursor: pointer; font-size: 14px; transition: all 0.15s; text-align: left; width: 100%; font-family: sans-serif; }
+    .quiz-opt:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-light); }
+    .quiz-opt.correct { border-color: #16a34a; background: var(--success-light); color: #16a34a; font-weight: 600; }
+    .quiz-opt.wrong { border-color: var(--danger); background: var(--danger-light); color: var(--danger); }
+    .quiz-opt:disabled { cursor: default; }
+    .quiz-feedback { margin-top: 8px; font-size: 13px; display: none; padding: 8px 12px; border-radius: 4px; background: white; border: 1px solid var(--border); }
+    .quiz-score { text-align: center; font-size: 18px; font-weight: 700; padding: 16px; border-radius: 8px; display: none; margin-top: 16px; font-family: sans-serif; }
+    .quiz-score.good { background: var(--success-light); color: var(--success); }
+    .quiz-score.ok { background: var(--warn-light); color: var(--warn); }
+    .inline-quiz { background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 14px 18px; margin: 20px 0; }
+    .inline-quiz p { margin-bottom: 8px; font-weight: 600; font-size: 14px; }
+    .inline-quiz input { border: 2px solid var(--border); border-radius: 4px; padding: 6px 10px; font-size: 13px; font-family: monospace; width: 100%; max-width: 360px; margin-bottom: 8px; }
+    .inline-quiz button { background: var(--accent); color: white; border: none; border-radius: 4px; padding: 6px 14px; cursor: pointer; font-size: 13px; font-family: sans-serif; }
+    .inline-quiz .feedback { font-size: 13px; margin-top: 6px; display: none; }
+    .inline-quiz .feedback.ok { color: var(--success); }
+    .inline-quiz .feedback.bad { color: var(--danger); }
+
+    .primary-source { background: white; border: 1px solid var(--border); border-radius: 8px; padding: 18px; margin: 32px 0; font-family: sans-serif; }
+    .primary-source .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; margin-bottom: 6px; }
+    .primary-source .title { font-size: 16px; font-weight: 700; color: var(--accent); margin-bottom: 4px; }
+    .primary-source .desc { font-size: 13px; color: #64748b; }
+
+    .nav-links { font-family: sans-serif; font-size: 13px; display: flex; gap: 16px; margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--border); }
+    .nav-links a { color: var(--accent); }
+    .ask-me { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 14px 18px; margin: 32px 0; font-family: sans-serif; font-size: 14px; }
+    .ask-me strong { color: #0369a1; }
+
+    /* Lifecycle diagram */
+    .lifecycle-diagram {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      margin: 16px 0;
+      font-family: sans-serif;
+      font-size: 13px;
+      line-height: 1.8;
+    }
+    .lifecycle-step {
+      padding: 10px 14px;
+      margin: 8px 0;
+      border-left: 3px solid var(--accent);
+      background: var(--accent-light);
+      border-radius: 0 4px 4px 0;
+    }
+    .lifecycle-step.phase {
+      background: #fef3c7;
+      border-color: var(--warn);
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <nav>
+    <div class="nav-section">
+      <h3>本课导航</h3>
+      <a href="#intro">开篇</a>
+      <a href="#precheck">前置检查</a>
+      <a href="#ioc-architecture">一、IoC容器体系</a>
+      <a href="#refresh">二、ApplicationContext初始化</a>
+      <a href="#lifecycle">三、Bean生命周期</a>
+      <a href="#circular">四、循环依赖</a>
+      <a href="#interview">五、面试话术</a>
+      <a href="#quiz">六、章末 Quiz</a>
+      <a href="#actions">课后行动</a>
+      <a href="#resources">参考资源</a>
+    </div>
+    <div class="nav-section">
+      <h3>课程系列</h3>
+      <a href="0009-spring-transaction-propagation.html">09 Spring 事务</a>
+      <a href="0013-transactional-readonly-optimization.html">13 @Transactional(readOnly)</a>
+      <a href="0023-spring-boot-autoconfiguration.html">23 自动配置</a>
+      <a href="0024-spring-ioc-container-bean-lifecycle.html" style="color:#f1f5f9;font-weight:700">24 IoC容器 + Bean生命周期 ←</a>
+    </div>
+  </nav>
+
+  <main>
+    <div class="lesson-meta">
+      <span>Lesson 24</span>
+      <span>Spring IoC容器原理 + Bean生命周期</span>
+      <span>~40 分钟</span>
+    </div>
+
+    <h1>Spring IoC容器原理 + Bean生命周期</h1>
+
+    <p style="font-size:15px;color:#64748b;margin-bottom:32px">
+      你在 <a href="0023-spring-boot-autoconfiguration.html">Lesson 23</a> 学习了自动配置原理（配置如何被加载）。本课深入 IoC 容器内部，理解 <strong>BeanFactory 与 ApplicationContext 的区别</strong>、<strong>ApplicationContext.refresh() 初始化流程</strong>、<strong>Bean 的完整生命周期</strong>，以及 <strong>三级缓存解决循环依赖</strong>的机制——这是 Spring 高级面试 95% 命中率的核心考点。
+    </p>
+
+    <!-- 开篇连接 -->
+    <div class="callout" id="intro">
+      <strong>本课与面试/项目的直接关联</strong>
+      IoC容器原理是 Spring 框架的核心基础，也是高级 Java 面试必问考点。"说说 Spring IoC 容器的初始化过程？"、"Bean 的生命周期有哪些阶段？"、"Spring 能解决所有循环依赖吗？"几乎必问。同时，理解这些原理能帮你更好地开发 clickhouse-mcp-server 的 Starter 组件。
+    </div>
+
+    <!-- 前置检查 -->
+    <h2 id="precheck">前置检查</h2>
+    <p>检验你是否掌握学习本课所需的前置知识。</p>
+
+    <div class="inline-quiz">
+      <p>1. ApplicationContext 和 BeanFactory 的核心区别是什么？（列举一个关键区别）</p>
+      <input type="text" id="pre1" placeholder="ApplicationContext 预加载Bean，BeanFactory 懒加载">
+      <button onclick="checkPre('pre1', ['预加载', '懒加载', 'lazy', 'eager', '事件', '国际化'], 'pre1-fb')">检验</button>
+      <div class="feedback" id="pre1-fb"></div>
+    </div>
+
+    <div class="inline-quiz">
+      <p>2. @PostConstruct 和 @PreDestroy 注解的作用是什么？</p>
+      <input type="text" id="pre2" placeholder="初始化和销毁回调">
+      <button onclick="checkPre('pre2', ['初始化', '销毁', 'init', 'destroy', '回调', 'callback'], 'pre2-fb')">检验</button>
+      <div class="feedback" id="pre2-fb"></div>
+    </div>
+
+    <!-- Part 1: IoC容器体系 -->
+    <h2 id="ioc-architecture">一、IoC容器体系</h2>
+
+    <h3>1.1 BeanFactory 体系结构</h3>
+    <p>BeanFactory 是 Spring IoC 容器的顶层接口，定义了获取 Bean 的基本规范。</p>
+
+    <pre><code><span class="comment">// BeanFactory 核心接口</span>
+<span class="keyword">public interface</span> <span class="type">BeanFactory</span> {
+    <span class="comment">// 获取Bean</span>
+    Object getBean(String name) <span class="keyword">throws</span> BeansException;
+
+    <span class="comment">// 判断是否包含Bean</span>
+    boolean containsBean(String name);
+
+    <span class="comment">// 判断Bean的作用域</span>
+    boolean isSingleton(String name) <span class="keyword">throws</span> NoSuchBeanDefinitionException;
+    boolean isPrototype(String name) <span class="keyword">throws</span> NoSuchBeanDefinitionException;
+}</code></pre>
+
+    <p>BeanFactory 的继承体系：</p>
+
+    <pre><code>BeanFactory (顶层接口)
+    ↓
+ListableBeanFactory (可列举Bean)
+    ↓
+ConfigurableBeanFactory (可配置)
+    ↓
+DefaultListableBeanFactory (核心实现类)</code></pre>
+
+    <div class="callout">
+      <strong>关键实现类：DefaultListableBeanFactory</strong>
+      这是 Spring 中最核心的 BeanFactory 实现，包含了完整的 Bean 定义注册、Bean 实例化、依赖注入等能力。ApplicationContext 内部就是持有一个 DefaultListableBeanFactory 实例。
+    </div>
+
+    <h3>1.2 ApplicationContext 体系</h3>
+    <p>ApplicationContext 是 BeanFactory 的超集，提供了更多企业级功能。</p>
+
+    <pre><code><span class="comment">// ApplicationContext 核心接口</span>
+<span class="keyword">public interface</span> <span class="type">ApplicationContext</span> <span class="keyword">extends</span>
+        EnvironmentCapable,      <span class="comment">// 环境配置</span>
+        ListableBeanFactory,     <span class="comment">// Bean列举</span>
+        HierarchicalBeanFactory, <span class="comment">// 层级BeanFactory</span>
+        MessageSource,           <span class="comment">// 国际化</span>
+        ApplicationEventPublisher, <span class="comment">// 事件发布</span>
+        ResourcePatternResolver {  <span class="comment">// 资源加载</span>
+
+    <span class="comment">// 获取应用名称</span>
+    String getApplicationName();
+
+    <span class="comment">// 获取启动时间</span>
+    long getStartupDate();
+}</code></pre>
+
+    <p>ApplicationContext 的常见实现：</p>
+
+    <table>
+      <tr>
+        <th>实现类</th>
+        <th>使用场景</th>
+        <th>配置方式</th>
+      </tr>
+      <tr>
+        <td>ClassPathXmlApplicationContext</td>
+        <td>XML 配置</td>
+        <td>classpath 下的 XML 文件</td>
+      </tr>
+      <tr>
+        <td>FileSystemXmlApplicationContext</td>
+        <td>XML 配置</td>
+        <td>文件系统中的 XML 文件</td>
+      </tr>
+      <tr>
+        <td>AnnotationConfigApplicationContext</td>
+        <td>注解配置</td>
+        <td>@Configuration 类</td>
+      </tr>
+      <tr>
+        <td>AnnotationConfigWebApplicationContext</td>
+        <td>Web 环境</td>
+        <td>Web 应用注解配置</td>
+      </tr>
+    </table>
+
+    <h3>1.3 BeanFactory vs ApplicationContext</h3>
+    <p>两者核心区别对比：</p>
+
+    <table>
+      <tr>
+        <th>特性</th>
+        <th>BeanFactory</th>
+        <th>ApplicationContext</th>
+      </tr>
+      <tr>
+        <td>初始化时机</td>
+        <td>懒加载（getBean 时才创建）</td>
+        <td>预加载（启动时创建所有非懒加载单例）</td>
+      </tr>
+      <tr>
+        <td>国际化支持</td>
+        <td>❌</td>
+        <td>✅ （MessageSource）</td>
+      </tr>
+      <tr>
+        <td>事件发布</td>
+        <td>❌</td>
+        <td>✅ （ApplicationEventPublisher）</td>
+      </tr>
+      <tr>
+        <td>资源加载</td>
+        <td>❌</td>
+        <td>✅ （ResourcePatternResolver）</td>
+      </tr>
+      <tr>
+        <td>自动配置</td>
+        <td>❌</td>
+        <td>✅ （@EnableAutoConfiguration）</td>
+      </tr>
+      <tr>
+        <td>BeanPostProcessor 注册</td>
+        <td>手动注册</td>
+        <td>自动注册</td>
+      </tr>
+    </table>
+
+    <div class="callout success">
+      <strong>面试要点</strong>
+      实际开发中几乎不使用 BeanFactory，而是直接使用 ApplicationContext。Spring Boot 内部使用的是 AnnotationConfigServletWebServerApplicationContext。
+    </div>
+
+    <!-- Part 2: ApplicationContext 初始化流程 -->
+    <h2 id="refresh">二、ApplicationContext 初始化流程</h2>
+
+    <p>ApplicationContext 初始化的核心是 <code>refresh()</code> 方法，这是 Spring 容器启动的入口。</p>
+
+    <h3>2.1 refresh() 方法核心流程</h3>
+
+    <pre><code><span class="keyword">public void</span> <span class="func">refresh</span>() <span class="keyword">throws</span> BeansException, IllegalStateException {
+    <span class="keyword">synchronized</span> (<span class="keyword">this</span>.startupShutdownMonitor) {
+        <span class="comment">// 1. 准备刷新</span>
+        prepareRefresh();
+
+        <span class="comment">// 2. 创建 BeanFactory 并加载 BeanDefinition</span>
+        ConfigurableListableBeanFactory beanFactory = obtainFreshBeanFactory();
+
+        <span class="comment">// 3. 准备 BeanFactory</span>
+        prepareBeanFactory(beanFactory);
+
+        <span class="comment">// 4. 后置处理 BeanFactory (留给子类扩展)</span>
+        postProcessBeanFactory(beanFactory);
+
+        <span class="comment">// 5. 执行 BeanFactoryPostProcessor</span>
+        invokeBeanFactoryPostProcessors(beanFactory);
+
+        <span class="comment">// 6. 注册 BeanPostProcessor</span>
+        registerBeanPostProcessors(beanFactory);
+
+        <span class="comment">// 7. 初始化 MessageSource（国际化）</span>
+        initMessageSource();
+
+        <span class="comment">// 8. 初始化事件广播器</span>
+        initApplicationEventMulticaster();
+
+        <span class="comment">// 9. 初始化其他特殊 Bean (留给子类扩展)</span>
+        onRefresh();
+
+        <span class="comment">// 10. 注册监听器</span>
+        registerListeners();
+
+        <span class="comment">// 11. 完成所有非懒加载 Bean 的初始化 ⭐</span>
+        finishBeanFactoryInitialization(beanFactory);
+
+        <span class="comment">// 12. 完成刷新</span>
+        finishRefresh();
+    }
+}</code></pre>
+
+    <div class="lifecycle-diagram">
+      <div class="lifecycle-step phase">Phase 1: 准备阶段</div>
+      <div class="lifecycle-step">prepareRefresh() — 设置启动时间、验证必填属性</div>
+      <div class="lifecycle-step">obtainFreshBeanFactory() — 创建 DefaultListableBeanFactory，加载 BeanDefinition</div>
+
+      <div class="lifecycle-step phase">Phase 2: BeanFactory 准备</div>
+      <div class="lifecycle-step">prepareBeanFactory() — 设置 ClassLoader、注册默认 BeanPostProcessor</div>
+      <div class="lifecycle-step">postProcessBeanFactory() — 子类扩展点（如 Spring Boot Servlet 容器）</div>
+
+      <div class="lifecycle-step phase">Phase 3: BeanFactoryPostProcessor 执行</div>
+      <div class="lifecycle-step">invokeBeanFactoryPostProcessors() — 执行所有的 BeanFactoryPostProcessor</div>
+      <div class="lifecycle-step" style="padding-left: 30px">├─ ConfigurationClassPostProcessor — 处理 @Configuration、@Bean</div>
+      <div class="lifecycle-step" style="padding-left: 30px">└─ PropertySourcesPlaceholderConfigurer — 处理 ${...} 占位符</div>
+
+      <div class="lifecycle-step phase">Phase 4: BeanPostProcessor 注册</div>
+      <div class="lifecycle-step">registerBeanPostProcessors() — 注册所有的 BeanPostProcessor</div>
+      <div class="lifecycle-step" style="padding-left: 30px">├─ AutowiredAnnotationBeanPostProcessor — 处理 @Autowired</div>
+      <div class="lifecycle-step" style="padding-left: 30px">└─ CommonAnnotationBeanPostProcessor — 处理 @PostConstruct、@PreDestroy</div>
+
+      <div class="lifecycle-step phase">Phase 5: 其他组件初始化</div>
+      <div class="lifecycle-step">initMessageSource() — 初始化国际化组件</div>
+      <div class="lifecycle-step">initApplicationEventMulticaster() — 初始化事件广播器</div>
+      <div class="lifecycle-step">onRefresh() — 子类扩展点（如 Spring Boot 启动 Web 服务器）</div>
+      <div class="lifecycle-step">registerListeners() — 注册 ApplicationListener</div>
+
+      <div class="lifecycle-step phase">Phase 6: Bean 实例化 ⭐</div>
+      <div class="lifecycle-step">finishBeanFactoryInitialization() — 实例化所有非懒加载单例 Bean</div>
+
+      <div class="lifecycle-step phase">Phase 7: 完成</div>
+      <div class="lifecycle-step">finishRefresh() — 发布 ContextRefreshedEvent、启动 Lifecycle Processor</div>
+    </div>
+
+    <h3>2.2 finishBeanFactoryInitialization() 详解</h3>
+    <p>这是容器初始化的核心步骤，负责将所有非懒加载的单例 Bean 实例化。</p>
+
+    <pre><code><span class="keyword">protected void</span> <span class="func">finishBeanFactoryInitialization</span>(ConfigurableListableBeanFactory beanFactory) {
+    <span class="comment">// 初始化 ConversionService（类型转换服务）</span>
+    <span class="keyword">if</span> (beanFactory.containsBean(CONVERSION_SERVICE_BEAN_NAME)) {
+        beanFactory.getBean(CONVERSION_SERVICE_BEAN_NAME, ConversionService.class);
+    }
+
+    <span class="comment">// 冻结 BeanDefinition（不允许再修改）</span>
+    beanFactory.freezeConfiguration();
+
+    <span class="comment">// ⭐ 核心：实例化所有非懒加载的单例 Bean</span>
+    beanFactory.preInstantiateSingletons();
+}
+
+<span class="comment">// DefaultListableBeanFactory.preInstantiateSingletons()</span>
+<span class="keyword">public void</span> <span class="func">preInstantiateSingletons</span>() <span class="keyword">throws</span> BeansException {
+    <span class="comment">// 遍历所有 BeanDefinition</span>
+    List&lt;String&gt; beanNames = <span class="keyword">new</span> ArrayList&lt;&gt;(<span class="keyword">this</span>.beanDefinitionNames);
+
+    <span class="keyword">for</span> (String beanName : beanNames) {
+        RootBeanDefinition bd = getMergedLocalBeanDefinition(beanName);
+
+        <span class="comment">// 只实例化：非抽象 && 非懒加载 && 单例</span>
+        <span class="keyword">if</span> (!bd.isAbstract() && bd.isSingleton() && !bd.isLazyInit()) {
+            <span class="keyword">if</span> (isFactoryBean(beanName)) {
+                <span class="comment">// FactoryBean 特殊处理</span>
+                getBean(FACTORY_BEAN_PREFIX + beanName);
+            } <span class="keyword">else</span> {
+                <span class="comment">// ⭐ 核心：获取 Bean（会触发创建）</span>
+                getBean(beanName);
+            }
+        }
+    }
+}</code></pre>
+
+    <div class="inline-quiz">
+      <p>检验：finishBeanFactoryInitialization() 会实例化哪些 Bean？</p>
+      <div class="quiz-options">
+        <button class="quiz-opt" onclick="checkInline(this, false, 'lazy-wrong')">所有 @Component 标注的 Bean</button>
+        <button class="quiz-opt" onclick="checkInline(this, false, 'prototype-wrong')">包括 prototype 作用域的 Bean</button>
+        <button class="quiz-opt" onclick="checkInline(this, true, 'correct')">非懒加载的单例 Bean</button>
+        <button class="quiz-opt" onclick="checkInline(this, false, 'all-wrong')">所有 Bean（包括懒加载）</button>
+      </div>
+      <div class="feedback" id="lazy-wrong" style="display:none;color:var(--danger)">❌ 懒加载的 Bean 不会被实例化</div>
+      <div class="feedback" id="prototype-wrong" style="display:none;color:var(--danger)">❌ prototype Bean 每次获取时才会创建</div>
+      <div class="feedback" id="correct" style="display:none;color:var(--success)">✅ 正确！只实例化非抽象、非懒加载、单例的 Bean</div>
+      <div class="feedback" id="all-wrong" style="display:none;color:var(--danger)">❌ 懒加载的 Bean 在 getBean 时才创建</div>
+    </div>
+
+    <!-- Part 3: Bean生命周期 -->
+    <h2 id="lifecycle">三、Bean生命周期</h2>
+
+    <p>Bean 从创建到销毁经历多个阶段，理解这些阶段对编写正确的 Spring 组件至关重要。</p>
+
+    <h3>3.1 完整生命周期流程图</h3>
+
+    <div class="lifecycle-diagram">
+      <div class="lifecycle-step phase">阶段 1: 实例化（Instantiation）</div>
+      <div class="lifecycle-step">createBeanInstance() — 通过构造器反射创建对象</div>
+      <div class="lifecycle-step" style="padding-left: 30px">├─ 如果有无参构造器：直接反射创建</div>
+      <div class="lifecycle-step" style="padding-left: 30px">└─ 如果有带参构造器：解析依赖，先创建依赖 Bean</div>
+
+      <div class="lifecycle-step phase">阶段 2: 属性注入（Population）</div>
+      <div class="lifecycle-step">populateBean() — 注入依赖的属性</div>
+      <div class="lifecycle-step" style="padding-left: 30px">├─ @Autowired 注入</div>
+      <div class="lifecycle-step" style="padding-left: 30px">├─ @Value 注入</div>
+      <div class="lifecycle-step" style="padding-left: 30px">└─ setter 方法注入（XML 配置）</div>
+
+      <div class="lifecycle-step phase">阶段 3: 初始化（Initialization）⭐</div>
+      <div class="lifecycle-step">3.1 Aware 接口回调</div>
+      <div class="lifecycle-step" style="padding-left: 30px">├─ BeanNameAware.setBeanName()</div>
+      <div class="lifecycle-step" style="padding-left: 30px">├─ BeanFactoryAware.setBeanFactory()</div>
+      <div class="lifecycle-step" style="padding-left: 30px">└─ ApplicationContextAware.setApplicationContext()</div>
+
+      <div class="lifecycle-step">3.2 BeanPostProcessor 前置处理</div>
+      <div class="lifecycle-step" style="padding-left: 30px">└─ postProcessBeforeInitialization()</div>
+
+      <div class="lifecycle-step">3.3 初始化方法调用</div>
+      <div class="lifecycle-step" style="padding-left: 30px">├─ @PostConstruct 标注的方法</div>
+      <div class="lifecycle-step" style="padding-left: 30px">├─ InitializingBean.afterPropertiesSet()</div>
+      <div class="lifecycle-step" style="padding-left: 30px">└─ 自定义 init-method</div>
+
+      <div class="lifecycle-step">3.4 BeanPostProcessor 后置处理 ⭐</div>
+      <div class="lifecycle-step" style="padding-left: 30px">└─ postProcessAfterInitialization() — AOP 代理在此创建</div>
+
+      <div class="lifecycle-step phase">阶段 4: 使用（In Use）</div>
+      <div class="lifecycle-step">Bean 就绪，可被应用使用</div>
+
+      <div class="lifecycle-step phase">阶段 5: 销毁（Destruction）</div>
+      <div class="lifecycle-step">5.1 @PreDestroy 标注的方法</div>
+      <div class="lifecycle-step">5.2 DisposableBean.destroy()</div>
+      <div class="lifecycle-step">5.3 自定义 destroy-method</div>
+    </div>
+
+    <h3>3.2 生命周期回调接口详解</h3>
+
+    <pre><code><span class="keyword">import</span> org.springframework.beans.factory.*;
+<span class="keyword">import</span> org.springframework.context.*;
+<span class="keyword">import</span> javax.annotation.*;
+
+<span class="annotation">@Component</span>
+<span class="keyword">public class</span> <span class="type">MyBean</span> <span class="keyword">implements</span>
+        BeanNameAware,
+        BeanFactoryAware,
+        ApplicationContextAware,
+        InitializingBean,
+        DisposableBean {
+
+    <span class="keyword">private</span> String beanName;
+    <span class="keyword">private</span> BeanFactory beanFactory;
+    <span class="keyword">private</span> ApplicationContext applicationContext;
+
+    <span class="comment">// 1. Aware 接口回调</span>
+    <span class="annotation">@Override</span>
+    <span class="keyword">public void</span> <span class="func">setBeanName</span>(String name) {
+        <span class="keyword">this</span>.beanName = name;
+        System.out.println(<span class="string">"1. BeanNameAware: "</span> + name);
+    }
+
+    <span class="annotation">@Override</span>
+    <span class="keyword">public void</span> <span class="func">setBeanFactory</span>(BeanFactory beanFactory) {
+        <span class="keyword">this</span>.beanFactory = beanFactory;
+        System.out.println(<span class="string">"2. BeanFactoryAware"</span>);
+    }
+
+    <span class="annotation">@Override</span>
+    <span class="keyword">public void</span> <span class="func">setApplicationContext</span>(ApplicationContext applicationContext) {
+        <span class="keyword">this</span>.applicationContext = applicationContext;
+        System.out.println(<span class="string">"3. ApplicationContextAware"</span>);
+    }
+
+    <span class="comment">// 2. @PostConstruct</span>
+    <span class="annotation">@PostConstruct</span>
+    <span class="keyword">public void</span> <span class="func">init</span>() {
+        System.out.println(<span class="string">"4. @PostConstruct"</span>);
+    }
+
+    <span class="comment">// 3. InitializingBean</span>
+    <span class="annotation">@Override</span>
+    <span class="keyword">public void</span> <span class="func">afterPropertiesSet</span>() <span class="keyword">throws</span> Exception {
+        System.out.println(<span class="string">"5. InitializingBean.afterPropertiesSet()"</span>);
+    }
+
+    <span class="comment">// 4. @PreDestroy</span>
+    <span class="annotation">@PreDestroy</span>
+    <span class="keyword">public void</span> <span class="func">cleanup</span>() {
+        System.out.println(<span class="string">"6. @PreDestroy"</span>);
+    }
+
+    <span class="comment">// 5. DisposableBean</span>
+    <span class="annotation">@Override</span>
+    <span class="keyword">public void</span> <span class="func">destroy</span>() <span class="keyword">throws</span> Exception {
+        System.out.println(<span class="string">"7. DisposableBean.destroy()"</span>);
+    }
+}</code></pre>
+
+    <p>执行顺序输出：</p>
+    <pre><code>1. BeanNameAware: myBean
+2. BeanFactoryAware
+3. ApplicationContextAware
+4. @PostConstruct
+5. InitializingBean.afterPropertiesSet()
+6. @PreDestroy  (容器关闭时)
+7. DisposableBean.destroy()  (容器关闭时)</code></pre>
+
+    <div class="callout warn">
+      <strong>注意：@PostConstruct vs InitializingBean</strong>
+      @PostConstruct 是 JSR-250 标准注解，不依赖 Spring 接口，耦合度更低。InitializingBean 是 Spring 接口，但执行时机稍晚于 @PostConstruct。实际开发中推荐使用 @PostConstruct。
+    </div>
+
+    <h3>3.3 BeanPostProcessor 的作用</h3>
+    <p>BeanPostProcessor 是 Spring 生命周期中最强大的扩展点，允许在 Bean 初始化前后进行自定义处理。</p>
+
+    <pre><code><span class="keyword">public interface</span> <span class="type">BeanPostProcessor</span> {
+
+    <span class="comment">// 初始化前调用</span>
+    <span class="annotation">@Nullable</span>
+    <span class="keyword">default</span> Object <span class="func">postProcessBeforeInitialization</span>(Object bean, String beanName)
+            <span class="keyword">throws</span> BeansException {
+        <span class="keyword">return</span> bean;
+    }
+
+    <span class="comment">// 初始化后调用 ⭐ AOP 代理在此创建</span>
+    <span class="annotation">@Nullable</span>
+    <span class="keyword">default</span> Object <span class="func">postProcessAfterInitialization</span>(Object bean, String beanName)
+            <span class="keyword">throws</span> BeansException {
+        <span class="keyword">return</span> bean;
+    }
+}</code></pre>
+
+    <p>常见的 BeanPostProcessor 实现：</p>
+    <table>
+      <tr>
+        <th>BeanPostProcessor</th>
+        <th>作用</th>
+      </tr>
+      <tr>
+        <td>AutowiredAnnotationBeanPostProcessor</td>
+        <td>处理 @Autowired、@Value 注入</td>
+      </tr>
+      <tr>
+        <td>CommonAnnotationBeanPostProcessor</td>
+        <td>处理 @PostConstruct、@PreDestroy、@Resource</td>
+      </tr>
+      <tr>
+        <td>AbstractAutoProxyCreator</td>
+        <td>创建 AOP 代理（@Transactional 等）</td>
+      </tr>
+      <tr>
+        <td>ApplicationContextAwareProcessor</td>
+        <td>触发 Aware 接口回调</td>
+      </tr>
+    </table>
+
+    <div class="inline-quiz">
+      <p>检验：@Transactional 注解的 Bean 在生命周期哪个阶段变成代理对象？</p>
+      <div class="quiz-options">
+        <button class="quiz-opt" onclick="checkInline(this, false, 'before-wrong')">postProcessBeforeInitialization</button>
+        <button class="quiz-opt" onclick="checkInline(this, true, 'after-correct')">postProcessAfterInitialization</button>
+        <button class="quiz-opt" onclick="checkInline(this, false, 'init-wrong')">afterPropertiesSet</button>
+        <button class="quiz-opt" onclick="checkInline(this, false, 'aware-wrong')">Aware 回调阶段</button>
+      </div>
+      <div class="feedback" id="before-wrong" style="display:none;color:var(--danger)">❌ 这是初始化前的处理</div>
+      <div class="feedback" id="after-correct" style="display:none;color:var(--success)">✅ 正确！AOP 代理在初始化后通过 postProcessAfterInitialization 创建</div>
+      <div class="feedback" id="init-wrong" style="display:none;color:var(--danger)">❌ afterPropertiesSet 是初始化回调，不是代理创建时机</div>
+      <div class="feedback" id="aware-wrong" style="display:none;color:var(--danger)">❌ Aware 回调在初始化前执行</div>
+    </div>
+
+    <!-- Part 4: 循环依赖 -->
+    <h2 id="circular">四、循环依赖</h2>
+
+    <p>循环依赖是指两个或多个 Bean 相互依赖，形成闭环。Spring 通过三级缓存机制解决部分循环依赖问题。</p>
+
+    <h3>4.1 三级缓存机制</h3>
+
+    <pre><code><span class="comment">// DefaultSingletonBeanRegistry 中的三级缓存</span>
+
+<span class="comment">// 一级缓存：完整 Bean（单例池）</span>
+<span class="keyword">private final</span> Map&lt;String, Object&gt; <span class="func">singletonObjects</span> = <span class="keyword">new</span> ConcurrentHashMap&lt;&gt;(256);
+
+<span class="comment">// 二级缓存：早期 Bean（已实例化但未完成初始化）</span>
+<span class="keyword">private final</span> Map&lt;String, Object&gt; <span class="func">earlySingletonObjects</span> = <span class="keyword">new</span> HashMap&lt;&gt;(16);
+
+<span class="comment">// 三级缓存：Bean 工厂（用于创建早期 Bean 的ObjectFactory）</span>
+<span class="keyword">private final</span> Map&lt;String, ObjectFactory&lt;?&gt;&gt; <span class="func">singletonFactories</span> = <span class="keyword">new</span> HashMap&lt;&gt;(16);</code></pre>
+
+    <div class="callout">
+      <strong>三级缓存的作用</strong>
+      <ul style="margin-left: 20px; margin-top: 8px;">
+        <li><strong>singletonObjects</strong>：存放完全初始化好的 Bean，供外部使用</li>
+        <li><strong>earlySingletonObjects</strong>：存放早期的 Bean（已实例化但未初始化），用于解决循环依赖</li>
+        <li><strong>singletonFactories</strong>：存放 Bean 的 ObjectFactory，可以生成早期 Bean（可能已经是代理对象）</li>
+      </ul>
+    </div>
+
+    <h3>4.2 循环依赖解决流程</h3>
+
+    <p>以 A → B → A 的循环依赖为例：</p>
+
+    <div class="lifecycle-diagram">
+      <div class="lifecycle-step phase">步骤 1: 创建 Bean A</div>
+      <div class="lifecycle-step">1.1 getBean("A") 被调用</div>
+      <div class="lifecycle-step">1.2 从一级缓存查找 A → 未找到</div>
+      <div class="lifecycle-step">1.3 实例化 A（调用构造器）</div>
+      <div class="lifecycle-step">1.4 将 A 的 ObjectFactory 放入三级缓存（singletonFactories）</div>
+      <div class="lifecycle-step">1.5 开始注入 A 的属性 → 发现需要 B</div>
+
+      <div class="lifecycle-step phase">步骤 2: 创建 Bean B</div>
+      <div class="lifecycle-step">2.1 getBean("B") 被调用</div>
+      <div class="lifecycle-step">2.2 从一级缓存查找 B → 未找到</div>
+      <div class="lifecycle-step">2.3 实例化 B（调用构造器）</div>
+      <div class="lifecycle-step">2.4 将 B 的 ObjectFactory 放入三级缓存</div>
+      <div class="lifecycle-step">2.5 开始注入 B 的属性 → 发现需要 A</div>
+      <div class="lifecycle-step">2.6 从一级缓存查找 A → 未找到</div>
+      <div class="lifecycle-step">2.7 从二级缓存查找 A → 未找到</div>
+      <div class="lifecycle-step">2.8 从三级缓存查找 A → 找到！</div>
+      <div class="lifecycle-step">2.9 调用 A 的 ObjectFactory.getObject() → 获取早期 A（可能是代理）</div>
+      <div class="lifecycle-step">2.10 将 A 从三级缓存提升到二级缓存（earlySingletonObjects）</div>
+      <div class="lifecycle-step">2.11 B 注入 A 成功（注入的是早期 A）</div>
+      <div class="lifecycle-step">2.12 B 完成初始化 → 放入一级缓存（singletonObjects）</div>
+
+      <div class="lifecycle-step phase">步骤 3: 完成 Bean A</div>
+      <div class="lifecycle-step">3.1 A 注入 B 成功（B 已在一级缓存）</div>
+      <div class="lifecycle-step">3.2 A 完成初始化</div>
+      <div class="lifecycle-step">3.3 将 A 从二级缓存提升到一级缓存</div>
+      <div class="lifecycle-step">3.4 清除 A 的二级缓存和三级缓存</div>
+    </div>
+
+    <h3>4.3 循环依赖的限制</h3>
+
+    <table>
+      <tr>
+        <th>场景</th>
+        <th>能否解决</th>
+        <th>原因</th>
+      </tr>
+      <tr>
+        <td>属性注入循环依赖（@Autowired）</td>
+        <td>✅ 能</td>
+        <td>通过三级缓存机制解决</td>
+      </tr>
+      <tr>
+        <td>setter 注入循环依赖</td>
+        <td>✅ 能</td>
+        <td>通过三级缓存机制解决</td>
+      </tr>
+      <tr>
+        <td>构造器循环依赖</td>
+        <td>❌ 不能</td>
+        <td>无法实例化（构造器需要参数）</td>
+      </tr>
+      <tr>
+        <td>@Async 循环依赖</td>
+        <td>❌ 不能</td>
+        <td>代理创建时机问题（需要额外配置）</td>
+      </tr>
+      <tr>
+        <td>prototype 循环依赖</td>
+        <td>❌ 不能</td>
+        <td>非单例，不使用缓存</td>
+      </tr>
+    </table>
+
+    <div class="callout danger">
+      <strong>构造器循环依赖无法解决的原因</strong>
+      <pre><code><span class="annotation">@Component</span>
+<span class="keyword">public class</span> <span class="type">A</span> {
+    <span class="keyword">private final</span> B b;
+
+    <span class="comment">// 构造器需要 B，但 B 还未创建</span>
+    <span class="keyword">public</span> <span class="func">A</span>(B b) {
+        <span class="keyword">this</span>.b = b;
+    }
+}
+
+<span class="annotation">@Component</span>
+<span class="keyword">public class</span> <span class="type">B</span> {
+    <span class="keyword">private final</span> A a;
+
+    <span class="comment">// 构造器需要 A，但 A 还未创建</span>
+    <span class="keyword">public</span> <span class="func">B</span>(A a) {
+        <span class="keyword">this</span>.a = a;
+    }
+}
+
+<span class="comment">// 报错：BeanCurrentlyInCreationException</span>
+<span class="comment">// 原因：实例化 A 需要 B，实例化 B 需要 A，死循环</span></code></pre>
+    </div>
+
+    <!-- 面试话术 -->
+    <h2 id="interview">五、面试话术</h2>
+
+    <div class="callout">
+      <strong>面试场景 1：说说 Spring IoC 容器的初始化过程？</strong>
+    </div>
+
+    <p>答：</p>
+    <pre><code>Spring IoC 容器的初始化核心是 ApplicationContext.refresh() 方法，主要流程：
+
+1. 准备阶段：
+   - prepareRefresh()：设置启动时间、验证必填属性
+
+2. 创建 BeanFactory：
+   - obtainFreshBeanFactory()：创建 DefaultListableBeanFactory
+   - 加载 BeanDefinition（XML 或注解）
+
+3. BeanFactory 准备：
+   - prepareBeanFactory()：设置 ClassLoader、注册默认 BeanPostProcessor
+   - postProcessBeanFactory()：子类扩展点
+
+4. 执行 BeanFactoryPostProcessor：
+   - invokeBeanFactoryPostProcessors()
+   - ConfigurationClassPostProcessor 处理 @Configuration、@Bean
+   - PropertySourcesPlaceholderConfigurer 处理 ${...} 占位符
+
+5. 注册 BeanPostProcessor：
+   - registerBeanPostProcessors()
+   - AutowiredAnnotationBeanPostProcessor（处理 @Autowired）
+   - CommonAnnotationBeanPostProcessor（处理 @PostConstruct）
+
+6. 实例化 Bean（核心）：
+   - finishBeanFactoryInitialization()
+   - preInstantiateSingletons()：实例化所有非懒加载单例 Bean
+   - 对每个 Bean 调用 getBean()
+
+7. 完成刷新：
+   - finishRefresh()：发布 ContextRefreshedEvent
+   - 启动 Lifecycle Processor</code></pre>
+
+    <div class="callout" style="margin-top: 24px;">
+      <strong>面试场景 2：Bean 的生命周期有哪些阶段？</strong>
+    </div>
+
+    <p>答：</p>
+    <pre><code>Bean 的生命周期分为五大阶段：
+
+1. 实例化（Instantiation）：
+   - 通过构造器反射创建对象
+
+2. 属性注入（Population）：
+   - @Autowired 注入依赖
+   - @Value 注入配置
+   - setter 方法注入（XML 配置）
+
+3. 初始化（Initialization）：
+   - Aware 接口回调（BeanNameAware、BeanFactoryAware）
+   - BeanPostProcessor.postProcessBeforeInitialization()
+   - @PostConstruct 标注的方法
+   - InitializingBean.afterPropertiesSet()
+   - 自定义 init-method
+   - BeanPostProcessor.postProcessAfterInitialization()（AOP 代理在此创建）
+
+4. 使用（In Use）：
+   - Bean 就绪，可被应用使用
+
+5. 销毁（Destruction）：
+   - @PreDestroy 标注的方法
+   - DisposableBean.destroy()
+   - 自定义 destroy-method</code></pre>
+
+    <div class="callout" style="margin-top: 24px;">
+      <strong>面试场景 3：Spring 能解决所有循环依赖吗？为什么？</strong>
+    </div>
+
+    <p>答：</p>
+    <pre><code>不能，Spring 只能解决部分循环依赖，有限制：
+
+✅ 可解决：
+- 属性注入循环依赖（@Autowired、setter）
+- 通过三级缓存机制解决
+
+❌ 无法解决：
+1. 构造器循环依赖：
+   - 原因：无法实例化（构造器需要参数，参数未创建）
+   - 报错：BeanCurrentlyInCreationException
+
+2. @Async 循环依赖：
+   - 原因：代理创建时机问题（@Async 的代理在初始化后创建）
+   - 解决：使用 @Lazy 延迟注入
+
+3. prototype 循环依赖：
+   - 原因：prototype 作用域不使用缓存
+   - 解决：使用代理或重构设计
+
+三级缓存原理：
+- singletonObjects（一级）：完整 Bean
+- earlySingletonObjects（二级）：早期 Bean（半成品）
+- singletonFactories（三级）：ObjectFactory（用于创建早期 Bean，可能已经是代理）
+
+解决流程（A → B → A）：
+1. 创建 A，实例化后放入三级缓存
+2. 注入 A 的属性时发现需要 B，开始创建 B
+3. B 注入属性时发现需要 A
+4. 从三级缓存获取 A 的 ObjectFactory
+5. 调用 getObject() 获取早期 A（可能是代理）
+6. 将 A 提升到二级缓存
+7. B 完成初始化，放入一级缓存
+8. A 注入 B 成功，完成初始化</code></pre>
+
+    <!-- 章末 Quiz -->
+    <div class="quiz-section" id="quiz">
+      <h2>六、章末 Quiz（检索练习）</h2>
+      <p style="font-size: 14px; color: #64748b; margin-bottom: 20px;">检验你对本课内容的理解。全部答对可获得完成徽章。</p>
+
+      <div class="quiz-q" id="q1">
+        <p>Q1: BeanFactory 和 ApplicationContext 的核心区别是什么？</p>
+        <div class="quiz-options">
+          <button class="quiz-opt" onclick="answer('q1', 'A', this)">A. BeanFactory 支持事件发布，ApplicationContext 不支持</button>
+          <button class="quiz-opt" onclick="answer('q1', 'B', this)">B. ApplicationContext 预加载 Bean，BeanFactory 懒加载</button>
+          <button class="quiz-opt" onclick="answer('q1', 'C', this)">C. BeanFactory 支持国际化，ApplicationContext 不支持</button>
+          <button class="quiz-opt" onclick="answer('q1', 'D', this)">D. 两者没有区别，只是接口不同</button>
+        </div>
+        <div class="quiz-feedback" id="fb-q1"></div>
+      </div>
+
+      <div class="quiz-q" id="q2">
+        <p>Q2: Bean 生命周期中，@PostConstruct、InitializingBean.afterPropertiesSet()、init-method 的执行顺序是什么？</p>
+        <div class="quiz-options">
+          <button class="quiz-opt" onclick="answer('q2', 'A', this)">A. @PostConstruct → afterPropertiesSet() → init-method</button>
+          <button class="quiz-opt" onclick="answer('q2', 'B', this)">B. afterPropertiesSet() → @PostConstruct → init-method</button>
+          <button class="quiz-opt" onclick="answer('q2', 'C', this)">C. init-method → @PostConstruct → afterPropertiesSet()</button>
+          <button class="quiz-opt" onclick="answer('q2', 'D', this)">D. @PostConstruct → init-method → afterPropertiesSet()</button>
+        </div>
+        <div class="quiz-feedback" id="fb-q2"></div>
+      </div>
+
+      <div class="quiz-q" id="q3">
+        <p>Q3: ApplicationContext.refresh() 中，哪个方法负责实例化所有非懒加载的单例 Bean？</p>
+        <div class="quiz-options">
+          <button class="quiz-opt" onclick="answer('q3', 'A', this)">A. prepareBeanFactory()</button>
+          <button class="quiz-opt" onclick="answer('q3', 'B', this)">B. invokeBeanFactoryPostProcessors()</button>
+          <button class="quiz-opt" onclick="answer('q3', 'C', this)">C. finishBeanFactoryInitialization()</button>
+          <button class="quiz-opt" onclick="answer('q3', 'D', this)">D. registerBeanPostProcessors()</button>
+        </div>
+        <div class="quiz-feedback" id="fb-q3"></div>
+      </div>
+
+      <div class="quiz-q" id="q4">
+        <p>Q4: Spring 能否解决构造器循环依赖？为什么？</p>
+        <div class="quiz-options">
+          <button class="quiz-opt" onclick="answer('q4', 'A', this)">A. 能，通过三级缓存机制解决</button>
+          <button class="quiz-opt" onclick="answer('q4', 'B', this)">B. 不能，因为无法实例化（构造器需要参数）</button>
+          <button class="quiz-opt" onclick="answer('q4', 'C', this)">C. 能，使用 @Lazy 注解即可</button>
+          <button class="quiz-opt" onclick="answer('q4', 'D', this)">D. 不能，因为 prototype 作用域不支持</button>
+        </div>
+        <div class="quiz-feedback" id="fb-q4"></div>
+      </div>
+
+      <div class="quiz-q" id="q5">
+        <p>Q5: BeanPostProcessor.postProcessAfterInitialization() 的主要作用是什么？</p>
+        <div class="quiz-options">
+          <button class="quiz-opt" onclick="answer('q5', 'A', this)">A. 注入 @Autowired 依赖</button>
+          <button class="quiz-opt" onclick="answer('q5', 'B', this)">B. 调用 @PostConstruct 方法</button>
+          <button class="quiz-opt" onclick="answer('q5', 'C', this)">C. 创建 AOP 代理对象</button>
+          <button class="quiz-opt" onclick="answer('q5', 'D', this)">D. 触发 Aware 接口回调</button>
+        </div>
+        <div class="quiz-feedback" id="fb-q5"></div>
+      </div>
+
+      <div class="quiz-score" id="quiz-score"></div>
+    </div>
+
+    <!-- 课后行动 -->
+    <h2 id="actions">七、课后行动</h2>
+    <div class="callout success">
+      <strong>立即执行的具体任务</strong>
+      <ol style="margin-left: 20px; margin-top: 12px; line-height: 2;">
+        <li><strong>画出 ApplicationContext.refresh() 流程图</strong>：在纸上或使用工具画出 refresh() 的 12 个核心步骤，标注每个步骤的作用。</li>
+        <li><strong>手写 Bean 生命周期回调示例</strong>：创建一个实现 BeanNameAware、InitializingBean、DisposableBean 的 Bean，观察执行顺序。</li>
+        <li><strong>分析 Spring Boot 启动日志</strong>：启动 clickhouse-mcp-server 项目，在日志中找到 refresh() 执行的痕迹，理解实际执行流程。</li>
+        <li><strong>模拟循环依赖场景</strong>：
+          <ul style="margin-left: 20px; margin-top: 8px;">
+            <li>创建两个相互 @Autowired 的 Bean，验证属性注入循环依赖可解决</li>
+            <li>改为构造器注入，观察 BeanCurrentlyInCreationException 错误</li>
+          </ul>
+        </li>
+        <li><strong>准备面试答题</strong>：根据本课内容，整理 IoC 容器初始化、Bean 生命周期、循环依赖三个问题的面试答案，练习口述。</li>
+      </ol>
+    </div>
+
+    <!-- Primary Source -->
+    <h2 id="resources">八、参考资源（Primary Source）</h2>
+
+    <div class="primary-source">
+      <div class="label">官方文档</div>
+      <div class="title">Spring Framework Reference Documentation — Core Technologies</div>
+      <div class="desc">1. IoC Container、2. Bean Overview、3. Dependencies、7. Bean Scopes、8. Customizing the Nature of a Bean</div>
+      <a href="https://docs.spring.io/spring-framework/docs/current/reference/html/core.html" target="_blank">https://docs.spring.io/spring-framework/docs/current/reference/html/core.html</a>
+    </div>
+
+    <div class="primary-source">
+      <div class="label">源码</div>
+      <div class="title">AbstractApplicationContext.refresh() — Spring IoC 容器启动入口</div>
+      <div class="desc">理解容器初始化的核心流程</div>
+      <a href="https://github.com/spring-projects/spring-framework/blob/main/spring-context/src/main/java/org/springframework/context/support/AbstractApplicationContext.java" target="_blank">GitHub — AbstractApplicationContext.java</a>
+    </div>
+
+    <div class="primary-source">
+      <div class="label">源码</div>
+      <div class="title">DefaultSingletonBeanRegistry — 三级缓存实现</div>
+      <div class="desc">理解循环依赖解决机制的核心代码</div>
+      <a href="https://github.com/spring-projects/spring-framework/blob/main/spring-beans/src/main/java/org/springframework/beans/factory/support/DefaultSingletonBeanRegistry.java" target="_blank">GitHub — DefaultSingletonBeanRegistry.java</a>
+    </div>
+
+    <div class="primary-source">
+      <div class="label">实战项目</div>
+      <div class="title">clickhouse-mcp-server — Spring Boot Starter 实战</div>
+      <div class="desc">将本课学到的 Bean 生命周期知识应用到实际项目中</div>
+      <a href="https://github.com/eurekame/clickhouse-mcp-server" target="_blank">GitHub — clickhouse-mcp-server</a>
+    </div>
+
+    <div class="nav-links">
+      <a href="0023-spring-boot-autoconfiguration.html">← Lesson 23: Spring Boot 自动配置</a>
+      <a href="#">Lesson 25: 待规划 →</a>
+    </div>
+
+    <div class="ask-me">
+      <strong>提问？</strong> 如果你对 IoC 容器原理、Bean 生命周期、或循环依赖有任何疑问，随时提问。我会结合 clickhouse-mcp-server 项目的实际场景帮你理解。
+    </div>
+  </main>
+</div>
+
+<script>
+// 答案
+const ANSWERS = {
+  'q1': 'B',  // ApplicationContext 预加载 Bean，BeanFactory 懒加载
+  'q2': 'A',  // @PostConstruct → afterPropertiesSet() → init-method
+  'q3': 'C',  // finishBeanFactoryInitialization()
+  'q4': 'B',  // 不能，因为无法实例化（构造器需要参数）
+  'q5': 'C'   // 创建 AOP 代理对象
+};
+
+const FEEDBACK = {
+  'q1': {
+    'A': '❌ BeanFactory 不支持事件发布，ApplicationContext 支持。',
+    'B': '✅ 正确！ApplicationContext 在启动时预加载所有非懒加载单例 Bean，BeanFactory 是懒加载。',
+    'C': '❌ 反了，ApplicationContext 支持国际化，BeanFactory 不支持。',
+    'D': '❌ 两者有显著区别，ApplicationContext 是 BeanFactory 的超集。'
+  },
+  'q2': {
+    'A': '✅ 正确！执行顺序：@PostConstruct → InitializingBean.afterPropertiesSet() → init-method',
+    'B': '❌ 顺序错误。@PostConstruct 是 JSR-250 标准，先执行。',
+    'C': '❌ 顺序错误。',
+    'D': '❌ 顺序错误。'
+  },
+  'q3': {
+    'A': '❌ prepareBeanFactory() 是准备 BeanFactory。',
+    'B': '❌ invokeBeanFactoryPostProcessors() 是执行 BeanFactoryPostProcessor。',
+    'C': '✅ 正确！finishBeanFactoryInitialization() 负责实例化所有非懒加载单例 Bean。',
+    'D': '❌ registerBeanPostProcessors() 是注册 BeanPostProcessor。'
+  },
+  'q4': {
+    'A': '❌ 构造器循环依赖无法解决。',
+    'B': '✅ 正确！构造器循环依赖无法解决，因为实例化时需要参数，而参数还未创建。',
+    'C': '❌ @Lazy 可以延迟注入，但不是解决构造器循环依赖的根本方法。',
+    'D': '❌ 构造器循环依赖与 prototype 作用域无关。'
+  },
+  'q5': {
+    'A': '❌ @Autowired 注入由 AutowiredAnnotationBeanPostProcessor 在 populateBean 阶段完成。',
+    'B': '❌ @PostConstruct 在 postProcessBeforeInitialization 阶段调用。',
+    'C': '✅ 正确！AOP 代理对象在 postProcessAfterInitialization 阶段创建（如 @Transactional 代理）。',
+    'D': '❌ Aware 接口回调由 ApplicationContextAwareProcessor 在 postProcessBeforeInitialization 阶段触发。'
+  }
+};
+
+let score = 0;
+let answered = new Set();
+
+function answer(qid, choice, btn) {
+  if (answered.has(qid)) return;
+  answered.add(qid);
+
+  const correct = ANSWERS[qid];
+  const feedbackEl = document.getElementById('fb-' + qid);
+  const options = document.querySelectorAll('#' + qid + ' .quiz-opt');
+
+  // 禁用所有按钮
+  options.forEach(opt => {
+    opt.disabled = true;
+    if (opt.textContent.startsWith(correct)) {
+      opt.classList.add('correct');
+    }
+    if (opt === btn && choice !== correct) {
+      opt.classList.add('wrong');
+    }
+  });
+
+  // 显示反馈
+  feedbackEl.textContent = FEEDBACK[qid][choice];
+  feedbackEl.style.display = 'block';
+
+  // 更新分数
+  if (choice === correct) {
+    score++;
+  }
+
+  updateTotal();
+}
+
+function updateTotal() {
+  if (answered.size === 5) {
+    const scoreEl = document.getElementById('quiz-score');
+    if (score === 5) {
+      scoreEl.textContent = `🎉 满分！${score}/5 — 你对 Spring IoC 容器原理和 Bean 生命周期掌握得非常扎实。`;
+      scoreEl.className = 'quiz-score good';
+    } else if (score >= 3) {
+      scoreEl.textContent = `✅ 及格！${score}/5 — 不错，但建议复习标记的题目。`;
+      scoreEl.className = 'quiz-score ok';
+    } else {
+      scoreEl.textContent = `⚠️ 需复习！${score}/5 — 建议重读本课内容，特别是 Bean 生命周期和循环依赖部分。`;
+      scoreEl.className = 'quiz-score ok';
+    }
+    scoreEl.style.display = 'block';
+  }
+}
+
+// 前置检查
+function checkPre(id, keywords, feedbackId) {
+  const input = document.getElementById(id);
+  const feedback = document.getElementById(feedbackId);
+  const value = input.value.toLowerCase();
+
+  const matches = keywords.some(kw => value.includes(kw.toLowerCase()));
+
+  if (matches) {
+    feedback.textContent = '✅ 正确！你已经具备学习本课的知识基础。';
+    feedback.className = 'feedback ok';
+  } else {
+    feedback.textContent = '⚠️ 建议先复习相关概念，或继续学习本课。';
+    feedback.className = 'feedback bad';
+  }
+  feedback.style.display = 'block';
+}
+
+// Inline quiz
+function checkInline(btn, isCorrect, feedbackId) {
+  const feedback = document.getElementById(feedbackId);
+  const allBtns = btn.parentElement.querySelectorAll('.quiz-opt');
+
+  allBtns.forEach(b => b.disabled = true);
+
+  if (isCorrect) {
+    btn.classList.add('correct');
+  } else {
+    btn.classList.add('wrong');
+    // 显示正确答案
+    allBtns.forEach(b => {
+      if (b.onclick && b.onclick.toString().includes('true')) {
+        b.classList.add('correct');
+      }
+    });
+  }
+
+  feedback.style.display = 'block';
+}
+</script>
+</body>
+</html>
