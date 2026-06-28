@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 23 — Spring Boot 自动配置原理 + clickhouse-mcp-server Starter 实战</title>
+  <style>
+    :root {
+      --bg: #fafaf8;
+      --text: #1a1a1a;
+      --accent: #2563eb;
+      --accent-light: #eff6ff;
+      --border: #e2e8f0;
+      --code-bg: #f1f5f9;
+      --success: #16a34a;
+      --success-light: #f0fdf4;
+      --warn: #d97706;
+      --warn-light: #fffbeb;
+      --danger: #dc2626;
+      --danger-light: #fef2f2;
+      --sidebar: #1e293b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Georgia', serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+    }
+    .layout { display: flex; min-height: 100vh; }
+    nav {
+      width: 220px;
+      background: var(--sidebar);
+      color: #94a3b8;
+      padding: 32px 0;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      flex-shrink: 0;
+    }
+    nav h3 { color: #f1f5f9; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; padding: 0 20px 12px; }
+    nav a { display: block; padding: 6px 20px; color: #94a3b8; text-decoration: none; font-size: 13px; font-family: sans-serif; }
+    nav a:hover { color: #f1f5f9; background: rgba(255,255,255,0.05); }
+    nav .nav-section { margin-bottom: 20px; }
+    main { flex: 1; max-width: 780px; padding: 56px 64px; }
+    .lesson-meta { font-family: sans-serif; font-size: 12px; color: #64748b; margin-bottom: 32px; }
+    .lesson-meta span { margin-right: 16px; }
+    h1 { font-size: 32px; font-weight: 700; margin-bottom: 8px; line-height: 1.2; }
+    h2 { font-size: 20px; font-weight: 700; margin: 40px 0 12px; padding-bottom: 6px; border-bottom: 2px solid var(--border); }
+    h3 { font-size: 16px; font-weight: 700; margin: 24px 0 8px; color: #334155; }
+    p { margin-bottom: 14px; }
+    a { color: var(--accent); }
+    code { font-family: 'Menlo', 'Monaco', monospace; font-size: 13px; background: var(--code-bg); padding: 2px 5px; border-radius: 3px; }
+    pre {
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 20px 24px;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin: 16px 0;
+      font-family: 'Menlo', 'Monaco', monospace;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    pre .comment { color: #64748b; }
+    pre .keyword { color: #93c5fd; }
+    pre .string { color: #86efac; }
+    pre .func { color: #fde68a; }
+    pre .type { color: #f9a8d4; }
+    pre .annotation { color: #c4b5fd; }
+    .callout {
+      border-left: 4px solid var(--accent);
+      background: var(--accent-light);
+      padding: 14px 18px;
+      margin: 20px 0;
+      border-radius: 0 6px 6px 0;
+      font-size: 14px;
+    }
+    .callout.warn { border-color: var(--warn); background: var(--warn-light); }
+    .callout.success { border-color: var(--success); background: var(--success-light); }
+    .callout.danger { border-color: var(--danger); background: var(--danger-light); }
+    .callout strong { display: block; margin-bottom: 4px; font-family: sans-serif; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .compare {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin: 16px 0;
+    }
+    .compare-box { background: var(--code-bg); border-radius: 8px; padding: 14px; }
+    .compare-box h4 { font-family: sans-serif; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; color: #64748b; }
+    table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px; font-family: sans-serif; }
+    th { background: var(--code-bg); text-align: left; padding: 8px 12px; border-bottom: 2px solid var(--border); font-size: 12px; }
+    td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    tr:hover td { background: var(--accent-light); }
+
+    /* Quiz */
+    .quiz-section { background: var(--code-bg); border-radius: 10px; padding: 24px; margin: 32px 0; }
+    .quiz-section h2 { border: none; margin-top: 0; }
+    .quiz-q { margin-bottom: 24px; }
+    .quiz-q p { font-weight: 600; margin-bottom: 10px; font-size: 15px; }
+    .quiz-options { display: grid; gap: 8px; }
+    .quiz-opt { display: block; background: white; border: 2px solid var(--border); border-radius: 6px; padding: 10px 14px; cursor: pointer; font-size: 14px; transition: all 0.15s; text-align: left; width: 100%; font-family: sans-serif; }
+    .quiz-opt:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-light); }
+    .quiz-opt.correct { border-color: #16a34a; background: var(--success-light); color: #16a34a; font-weight: 600; }
+    .quiz-opt.wrong { border-color: var(--danger); background: var(--danger-light); color: var(--danger); }
+    .quiz-opt:disabled { cursor: default; }
+    .quiz-feedback { margin-top: 8px; font-size: 13px; display: none; padding: 8px 12px; border-radius: 4px; background: white; border: 1px solid var(--border); }
+    .quiz-score { text-align: center; font-size: 18px; font-weight: 700; padding: 16px; border-radius: 8px; display: none; margin-top: 16px; font-family: sans-serif; }
+    .quiz-score.good { background: var(--success-light); color: var(--success); }
+    .quiz-score.ok { background: var(--warn-light); color: var(--warn); }
+    .inline-quiz { background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 14px 18px; margin: 20px 0; }
+    .inline-quiz p { margin-bottom: 8px; font-weight: 600; font-size: 14px; }
+    .inline-quiz input { border: 2px solid var(--border); border-radius: 4px; padding: 6px 10px; font-size: 13px; font-family: monospace; width: 100%; max-width: 360px; margin-bottom: 8px; }
+    .inline-quiz button { background: var(--accent); color: white; border: none; border-radius: 4px; padding: 6px 14px; cursor: pointer; font-size: 13px; font-family: sans-serif; }
+    .inline-quiz .feedback { font-size: 13px; margin-top: 6px; display: none; }
+    .inline-quiz .feedback.ok { color: var(--success); }
+    .inline-quiz .feedback.bad { color: var(--danger); }
+
+    .primary-source { background: white; border: 1px solid var(--border); border-radius: 8px; padding: 18px; margin: 32px 0; font-family: sans-serif; }
+    .primary-source .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; margin-bottom: 6px; }
+    .primary-source .title { font-size: 16px; font-weight: 700; color: var(--accent); margin-bottom: 4px; }
+    .primary-source .desc { font-size: 13px; color: #64748b; }
+
+    .nav-links { font-family: sans-serif; font-size: 13px; display: flex; gap: 16px; margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--border); }
+    .nav-links a { color: var(--accent); }
+    .ask-me { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 14px 18px; margin: 32px 0; font-family: sans-serif; font-size: 14px; }
+    .ask-me strong { color: #0369a1; }
+
+    /* Mermaid diagram placeholder */
+    .mermaid-diagram {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      margin: 16px 0;
+      text-align: center;
+      font-family: sans-serif;
+      font-size: 13px;
+      color: #64748b;
+    }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <nav>
+    <div class="nav-section">
+      <h3>本课导航</h3>
+      <a href="#intro">开篇</a>
+      <a href="#precheck">前置检查</a>
+      <a href="#principle">一、自动配置原理</a>
+      <a href="#source">二、源码分析</a>
+      <a href="#practice">三、实战演练</a>
+      <a href="#interview">四、面试话术</a>
+      <a href="#quiz">五、章末 Quiz</a>
+      <a href="#actions">课后行动</a>
+      <a href="#resources">参考资源</a>
+    </div>
+    <div class="nav-section">
+      <h3>课程系列</h3>
+      <a href="0009-spring-transaction-propagation.html">09 Spring 事务</a>
+      <a href="0013-transactional-readonly-optimization.html">13 @Transactional(readOnly)</a>
+      <a href="0021-tool-executor-interface.html">21 ToolExecutor 接口</a>
+      <a href="0023-spring-boot-autoconfiguration.html" style="color:#f1f5f9;font-weight:700">23 自动配置 ←</a>
+    </div>
+  </nav>
+
+  <main>
+    <div class="lesson-meta">
+      <span>Lesson 23</span>
+      <span>Spring Boot 自动配置原理</span>
+      <span>~35 分钟</span>
+    </div>
+
+    <h1>Spring Boot 自动配置原理 + clickhouse-mcp-server Starter 实战</h1>
+
+    <p style="font-size:15px;color:#64748b;margin-bottom:32px">
+      你在 <a href="0021-tool-executor-interface.html">Lesson 21</a> 定义了 ToolExecutor 接口。现在 clickhouse-mcp-server 需要零配置集成到 Spring Boot 项目。本课教你理解 <strong>@EnableAutoConfiguration 加载机制</strong>，并手写 <strong>ClickHouseMcpAutoConfiguration</strong>，实现 starter 的自动配置——同时也是高级 Java 面试必问考点。
+    </p>
+
+    <!-- 开篇连接 -->
+    <div class="callout" id="intro">
+      <strong>本课与面试/项目的直接关联</strong>
+      自动配置原理是 Spring Boot 面试 90% 命中率的核心考点。"讲讲 Spring Boot 自动配置原理？"几乎必问。同时，clickhouse-mcp-server 发布前必须完善 starter 自动配置，让用户引入依赖即可零配置使用。
+    </div>
+
+    <!-- 前置检查 -->
+    <h2 id="precheck">前置检查</h2>
+    <p>检验你是否掌握学习本课所需的前置知识。</p>
+
+    <div class="inline-quiz">
+      <p>1. @SpringBootApplication 注解包含了哪三个核心注解？（用逗号分隔）</p>
+      <input type="text" id="pre1" placeholder="@ComponentScan, @EnableAutoConfiguration, @SpringBootConfiguration">
+      <button onclick="checkPre('pre1', ['@componentscan', '@enableautoconfiguration', '@springbootconfiguration'], 'pre1-fb')">检验</button>
+      <div class="feedback" id="pre1-fb"></div>
+    </div>
+
+    <div class="inline-quiz">
+      <p>2. @Conditional 注解的作用是什么？</p>
+      <input type="text" id="pre2" placeholder="根据条件动态决定是否注册 Bean">
+      <button onclick="checkPreText('pre2', ['条件', 'condition'], 'pre2-fb')">检验</button>
+      <div class="feedback" id="pre2-fb"></div>
+    </div>
+
+    <!-- Part 1: 自动配置原理 -->
+    <h2 id="principle">一、自动配置原理</h2>
+
+    <h3>1.1 @EnableAutoConfiguration 注解</h3>
+    <p><code>@EnableAutoConfiguration</code> 是 Spring Boot 自动配置的入口注解，它通过 <code>@Import</code> 导入 <code>AutoConfigurationImportSelector</code>。</p>
+
+    <pre><span class="annotation">@Target</span>(ElementType.TYPE)
+<span class="annotation">@Retention</span>(RetentionPolicy.RUNTIME)
+<span class="annotation">@Documented</span>
+<span class="annotation">@Inherited</span>
+<span class="annotation">@AutoConfigurationPackage</span>
+<span class="annotation">@Import</span>(AutoConfigurationImportSelector.class)
+public <span class="keyword">interface</span> <span class="type">EnableAutoConfiguration</span> {
+    String ENABLED_OVERRIDE_PROPERTY = <span class="string">"spring.boot.enableautoconfiguration"</span>;
+    Class&lt;?&gt;[] exclude() <span class="keyword">default</span> {};
+    String[] excludeName() <span class="keyword">default</span> {};
+}</pre>
+
+    <div class="callout">
+      <strong>心智模型</strong>
+      @EnableAutoConfiguration = "启用自动配置"的开关。它通过 @Import 机制，让 AutoConfigurationImportSelector 去 classpath 扫描所有符合条件的配置类并注册到 IoC 容器。
+    </div>
+
+    <h3>1.2 加载流程</h3>
+    <p>自动配置的完整加载流程如下：</p>
+
+    <div class="mermaid-diagram">
+      <strong>自动配置加载流程</strong><br><br>
+      @SpringBootApplication<br>
+      ↓<br>
+      @EnableAutoConfiguration<br>
+      ↓<br>
+      @Import(AutoConfigurationImportSelector)<br>
+      ↓<br>
+      selectImports() → getAutoConfigurationEntry()<br>
+      ↓<br>
+      SpringFactoriesLoader.loadFactoryNames()<br>
+      ↓<br>
+      读取 META-INF/spring.factories<br>
+      ↓<br>
+      过滤条件注解 @Conditional<br>
+      ↓<br>
+      注册符合条件的 Bean
+    </div>
+
+    <h3>1.3 spring.factories 文件</h3>
+    <p>Spring Boot 2.x 和 3.x 的配置文件位置不同：</p>
+
+    <div class="compare">
+      <div class="compare-box">
+        <h4>Spring Boot 2.x</h4>
+        <pre>META-INF/spring.factories:
+org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
+com.example.XXXAutoConfiguration</pre>
+      </div>
+      <div class="compare-box">
+        <h4>Spring Boot 3.x</h4>
+        <pre>META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports:
+com.example.XXXAutoConfiguration</pre>
+      </div>
+    </div>
+
+    <div class="callout warn">
+      <strong>重要变更</strong>
+      Spring Boot 3.x 废弃了 spring.factories 机制，改用 imports 文件。如果你维护的 starter 需要兼容两个版本，需注意这个差异。
+    </div>
+
+    <h3>1.4 @Conditional 条件注解家族</h3>
+    <p>Spring Boot 提供了一系列 @Conditional 派生注解，用于条件化配置：</p>
+
+    <table>
+      <tr>
+        <th>注解</th>
+        <th>条件</th>
+        <th>使用场景</th>
+      </tr>
+      <tr>
+        <td><code>@ConditionalOnClass</code></td>
+        <td>类路径存在某个类</td>
+        <td>依赖某个库时才启用配置</td>
+      </tr>
+      <tr>
+        <td><code>@ConditionalOnBean</code></td>
+        <td>容器中存在某个 Bean</td>
+        <td>依赖某个 Bean 时才启用配置</td>
+      </tr>
+      <tr>
+        <td><code>@ConditionalOnProperty</code></td>
+        <td>配置属性满足条件</td>
+        <td>根据配置文件动态启用</td>
+      </tr>
+      <tr>
+        <td><code>@ConditionalOnMissingBean</code></td>
+        <td>容器中不存在某个 Bean</td>
+        <td>允许用户自定义 Bean 覆盖默认</td>
+      </tr>
+    </table>
+
+    <div class="inline-quiz">
+      <p>@ConditionalOnClass 和 @ConditionalOnBean 的核心区别？</p>
+      <input type="text" id="iq1" placeholder="前者检查类路径，后者检查 IoC 容器">
+      <button onclick="checkPreText('iq1', ['类路径', 'classpath', 'ioc', '容器'], 'iq1-fb')">检验</button>
+      <div class="feedback" id="iq1-fb"></div>
+    </div>
+
+    <!-- Part 2: 源码分析 -->
+    <h2 id="source">二、源码分析</h2>
+
+    <h3>2.1 AutoConfigurationImportSelector 源码</h3>
+    <p><code>AutoConfigurationImportSelector</code> 是实现自动配置的核心类，它实现了 <code>DeferredImportSelector</code> 接口。</p>
+
+    <pre><span class="keyword">public class</span> <span class="type">AutoConfigurationImportSelector</span>
+    <span class="keyword">implements</span> <span class="type">DeferredImportSelector</span>, <span class="type">BeanClassLoaderAware</span>,
+    <span class="type">ResourceLoaderAware</span>, <span class="type">BeanFactoryAware</span>, <span class="type">EnvironmentAware</span> {
+
+    <span class="annotation">@Override</span>
+    <span class="keyword">public</span> String[] <span class="func">selectImports</span>(AnnotationMetadata annotationMetadata) {
+        <span class="keyword">if</span> (!isEnabled(annotationMetadata)) {
+            <span class="keyword">return</span> NO_IMPORTS;
+        }
+        <span class="comment">// 获取自动配置入口</span>
+        AutoConfigurationEntry autoConfigurationEntry =
+            getAutoConfigurationEntry(annotationMetadata);
+        <span class="keyword">return</span> StringUtils.<span class="func">toStringArray</span>(
+            autoConfigurationEntry.getConfigurations());
+    }
+
+    <span class="keyword">protected</span> AutoConfigurationEntry <span class="func">getAutoConfigurationEntry</span>(
+            AnnotationMetadata annotationMetadata) {
+        <span class="comment">// 1. 获取候选配置类</span>
+        List&lt;String&gt; configurations = getCandidateConfigurations(...);
+        <span class="comment">// 2. 去重</span>
+        configurations = <span class="func">removeDuplicates</span>(configurations);
+        <span class="comment">// 3. 过滤排除项</span>
+        Set&lt;String&gt; exclusions = <span class="func">getExclusions</span>(...);
+        configurations.<span class="func">removeAll</span>(exclusions);
+        <span class="comment">// 4. 过滤条件注解</span>
+        configurations = <span class="func">filter</span>(configurations, autoConfigurationMetadata);
+        <span class="keyword">return</span> <span class="keyword">new</span> <span class="func">AutoConfigurationEntry</span>(configurations, exclusions);
+    }
+}</pre>
+
+    <div class="callout">
+      <strong>源码要点</strong>
+      selectImports() 是入口方法，它调用 getAutoConfigurationEntry() 获取所有需要导入的配置类。核心步骤：获取候选配置 → 去重 → 排除 → 条件过滤。
+    </div>
+
+    <h3>2.2 与 spring-ai-mcp-server 的集成</h3>
+    <p>分析 <code>McpServerAutoConfiguration</code> 源码，理解其自动配置机制：</p>
+
+    <pre><span class="annotation">@Configuration</span>
+<span class="annotation">@ConditionalOnClass</span>(McpServer.class)
+<span class="annotation">@EnableConfigurationProperties</span>(McpServerProperties.class)
+<span class="keyword">public class</span> <span class="type">McpServerAutoConfiguration</span> {
+
+    <span class="annotation">@Bean</span>
+    <span class="annotation">@ConditionalOnMissingBean</span>
+    <span class="keyword">public</span> McpServer <span class="func">mcpServer</span>(McpServerProperties properties) {
+        <span class="keyword">return</span> <span class="keyword">new</span> <span class="func">McpServer</span>(properties);
+    }
+}</pre>
+
+    <p>这个配置类的三个关键注解：</p>
+    <ul style="padding-left:20px;margin-bottom:14px">
+      <li><code>@ConditionalOnClass(McpServer.class)</code>：仅在类路径存在 McpServer 类时生效</li>
+      <li><code>@EnableConfigurationProperties</code>：启用属性绑定</li>
+      <li><code>@ConditionalOnMissingBean</code>：允许用户自定义 McpServer Bean 覆盖默认</li>
+    </ul>
+
+    <!-- Part 3: 实战演练 -->
+    <h2 id="practice">三、实战演练：手写 ClickHouseMcpAutoConfiguration</h2>
+
+    <h3>3.1 自动配置类实现</h3>
+    <p>现在来实现 clickhouse-mcp-server 的自动配置类：</p>
+
+    <pre><span class="annotation">@Configuration</span>
+<span class="annotation">@ConditionalOnClass</span>(ClickHouseClient.class)
+<span class="annotation">@EnableConfigurationProperties</span>(ClickHouseMcpProperties.class)
+<span class="keyword">public class</span> <span class="type">ClickHouseMcpAutoConfiguration</span> {
+
+    <span class="keyword">private final</span> ClickHouseMcpProperties properties;
+
+    <span class="keyword">public</span> <span class="func">ClickHouseMcpAutoConfiguration</span>(
+            ClickHouseMcpProperties properties) {
+        <span class="keyword">this</span>.properties = properties;
+    }
+
+    <span class="annotation">@Bean</span>
+    <span class="annotation">@ConditionalOnMissingBean</span>
+    <span class="keyword">public</span> ClickHouseClient <span class="func">clickHouseClient</span>() {
+        <span class="keyword">return</span> ClickHouseClient.<span class="func">builder</span>()
+            .host(properties.getHost())
+            .port(properties.getPort())
+            .database(properties.getDatabase())
+            .build();
+    }
+
+    <span class="annotation">@Bean</span>
+    <span class="annotation">@ConditionalOnBean</span>(ClickHouseClient.class)
+    <span class="keyword">public</span> ToolExecutor <span class="func">queryToolExecutor</span>(
+            ClickHouseClient client) {
+        <span class="keyword">return new</span> <span class="func">QueryToolExecutor</span>(client);
+    }
+}</pre>
+
+    <div class="callout success">
+      <strong>设计亮点</strong>
+      1. @ConditionalOnClass 确保仅在 ClickHouse 驱动存在时生效<br>
+      2. @ConditionalOnMissingBean 允许用户自定义 ClickHouseClient<br>
+      3. @ConditionalOnBean 确保仅当 ClickHouseClient 存在时才创建 ToolExecutor
+    </div>
+
+    <h3>3.2 属性类定义</h3>
+    <p>创建配置属性类，用于绑定 <code>application.properties</code> 中的配置：</p>
+
+    <pre><span class="annotation">@ConfigurationProperties</span>(prefix = <span class="string">"clickhouse.mcp"</span>)
+<span class="keyword">public class</span> <span class="type">ClickHouseMcpProperties</span> {
+
+    <span class="keyword">private</span> String host = <span class="string">"localhost"</span>;
+    <span class="keyword">private int</span> port = 9000;
+    <span class="keyword">private</span> String database = <span class="string">"default"</span>;
+    <span class="keyword">private</span> String username;
+    <span class="keyword">private</span> String password;
+
+    <span class="comment">// Getters and Setters</span>
+    <span class="keyword">public</span> String <span class="func">getHost</span>() { <span class="keyword">return</span> host; }
+    <span class="keyword">public void</span> <span class="func">setHost</span>(String host) { <span class="keyword">this</span>.host = host; }
+
+    <span class="keyword">public int</span> <span class="func">getPort</span>() { <span class="keyword">return</span> port; }
+    <span class="keyword">public void</span> <span class="func">setPort</span>(<span class="keyword">int</span> port) { <span class="keyword">this</span>.port = port; }
+
+    <span class="comment">// ... other getters and setters</span>
+}</pre>
+
+    <h3>3.3 spring.factories 配置</h3>
+    <p>在 <code>src/main/resources/META-INF/</code> 目录下创建配置文件：</p>
+
+    <div class="compare">
+      <div class="compare-box">
+        <h4>Spring Boot 2.x</h4>
+        <pre><span class="comment"># META-INF/spring.factories</span>
+org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
+com.eureka.clickhouse.mcp.ClickHouseMcpAutoConfiguration</pre>
+      </div>
+      <div class="compare-box">
+        <h4>Spring Boot 3.x</h4>
+        <pre><span class="comment"># META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports</span>
+com.eureka.clickhouse.mcp.ClickHouseMcpAutoConfiguration</pre>
+      </div>
+    </div>
+
+    <h3>3.4 Starter 打包规范</h3>
+    <p>标准的 Spring Boot Stater 模块结构：</p>
+
+    <pre>clickhouse-mcp-spring-boot-starter/
+├── pom.xml
+├── src/main/java/com/eureka/clickhouse/mcp/
+│   ├── ClickHouseMcpAutoConfiguration.java
+│   ├── ClickHouseMcpProperties.java
+│   └── QueryToolExecutor.java
+└── src/main/resources/
+    └── META-INF/
+        ├── spring.factories  (Spring Boot 2.x)
+        └── spring/
+            └── org.springframework.boot.autoconfigure.AutoConfiguration.imports  (Spring Boot 3.x)</pre>
+
+    <div class="inline-quiz">
+      <p>如何让自动配置类仅在 clickhouse.jdbc 驱动存在时生效？</p>
+      <input type="text" id="iq2" placeholder="@ConditionalOnClass(ClickHouseDriver.class)">
+      <button onclick="checkInline('iq2', '@ConditionalOnClass', 'iq2-fb')">检验</button>
+      <div class="feedback" id="iq2-fb"></div>
+    </div>
+
+    <!-- 面试话术 -->
+    <h2 id="interview">四、面试话术</h2>
+
+    <div class="callout success">
+      <strong>高频问题 1：讲讲 Spring Boot 自动配置原理？</strong>
+    </div>
+
+    <p><strong>标准答法（90秒版本）：</strong></p>
+
+    <p>Spring Boot 自动配置原理可以分为五个步骤：</p>
+
+    <p>第一步，<strong>入口注解</strong>。@SpringBootApplication 包含了 @EnableAutoConfiguration，这个注解通过 @Import(AutoConfigurationImportSelector.class) 导入自动配置选择器。</p>
+
+    <p>第二步，<strong>配置加载</strong>。AutoConfigurationImportSelector 的 selectImports() 方法调用 SpringFactoriesLoader.loadFactoryNames()，读取 classpath 下所有 META-INF/spring.factories 文件（Spring Boot 2.x）或 META-INF/spring/*.imports 文件（Spring Boot 3.x）。</p>
+
+    <p>第三步，<strong>候选配置</strong>。这些文件中以 org.springframework.boot.autoconfigure.EnableAutoConfiguration 为 key 的配置类全限定名列表，就是候选的自动配置类。</p>
+
+    <p>第四步，<strong>条件过滤</strong>。Spring Boot 会对这些候选配置类进行条件过滤，检查 @Conditional 系列注解：@ConditionalOnClass（类路径检查）、@ConditionalOnBean（Bean 存在检查）、@ConditionalOnProperty（配置属性检查）等。不符合条件的配置类会被过滤掉。</p>
+
+    <p>第五步，<strong>注册 Bean</strong>。符合条件的配置类被注册到 IoC 容器，其中的 @Bean 方法返回的实例被注册为 Bean。</p>
+
+    <p>项目实战中，我在 clickhouse-mcp-server 项目中实现了 ClickHouseMcpAutoConfiguration，使用 @ConditionalOnClass(ClickHouseClient.class) 确保仅在 ClickHouse 驱动存在时生效，使用 @ConditionalOnMissingBean 允许用户自定义配置。</p>
+
+    <div class="callout success">
+      <strong>高频问题 2：@ConditionalOnBean 和 @ConditionalOnClass 的区别？</strong>
+    </div>
+
+    <p><strong>标准答法（60秒版本）：</strong></p>
+
+    <p>这两个注解的核心区别在于检查的对象不同：</p>
+
+    <p>@ConditionalOnClass 检查的是<strong>类路径</strong>是否存在某个类。它只需要这个类在 classpath 中，不需要这个类被注册为 Bean。使用场景是：当某个依赖库存在时才启用配置。比如，仅当 ClickHouse JDBC 驱动在 classpath 中时，才启用 ClickHouse 相关的自动配置。</p>
+
+    <p>@ConditionalOnBean 检查的是<strong>IoC 容器</strong>中是否存在某个 Bean。它需要这个类已经被注册为 Bean。使用场景是：当某个 Bean 存在时才启用配置。比如，仅当容器中已经存在 DataSource Bean 时，才创建依赖 DataSource 的其他 Bean。</p>
+
+    <p>使用建议：优先使用 @ConditionalOnClass，因为它是编译时检查，更安全。谨慎使用 @ConditionalOnBean，因为它是运行时检查，可能会有 Bean 加载顺序的问题。在实际项目中，我通常组合使用：先用 @ConditionalOnClass 检查依赖库，再用 @ConditionalOnBean 检查依赖 Bean。</p>
+
+    <div class="callout warn">
+      <strong>面试陷阱：自动配置类没有被加载</strong>
+      可能的原因：1) spring.factories 或 imports 文件配置错误；2) @Conditional 条件不满足；3) 被 exclude 排除；4) 自动配置类所在的包没有被扫描到。排查方法：开启 debug 日志，查看 AutoConfigurationReport。
+    </div>
+
+    <!-- Primary Source -->
+    <div class="primary-source">
+      <div class="label">本课首选资源</div>
+      <div class="title"><a href="https://docs.spring.io/spring-boot/docs/current/reference/html/features.html#features.developing-auto-configuration" target="_blank">Spring Boot Reference - Creating Your Own Auto-configuration</a></div>
+      <div class="desc">Spring Boot 官方文档，详细讲解如何创建自定义自动配置。包含 @Conditional 注解的完整列表、自动配置的执行顺序、starter 模块的打包规范。读完本课后强烈建议阅读（40分钟）。</div>
+    </div>
+
+    <div class="primary-source">
+      <div class="label">辅助资源</div>
+      <div class="title"><a href="https://github.com/spring-projects/spring-boot/tree/main/spring-boot-project/spring-boot-autoconfigure" target="_blank">spring-boot-autoconfigure 源码</a></div>
+      <div class="desc">Spring Boot 自动配置模块的源码，包含数百个官方自动配置类的实现。建议重点阅读 WebMvcAutoConfiguration 或 DataSourceAutoConfiguration，学习最佳实践。</div>
+    </div>
+
+    <!-- Quiz -->
+    <div class="quiz-section" id="quiz">
+      <h2>五、章末 Quiz</h2>
+      <p style="font-family:sans-serif;font-size:13px;color:#64748b;margin-bottom:20px">不看上方内容，凭记忆回答。答错不扣分，只是帮你定位记忆空白。</p>
+
+      <div class="quiz-q" id="q1">
+        <p>1. @EnableAutoConfiguration 通过哪个注解导入自动配置选择器？</p>
+        <div class="quiz-options">
+          <button class="quiz-opt" onclick="answer('q1','A')">A. @ComponentScan</button>
+          <button class="quiz-opt" onclick="answer('q1','B')">B. @Import</button>
+          <button class="quiz-opt" onclick="answer('q1','C')">C. @Bean</button>
+          <button class="quiz-opt" onclick="answer('q1','D')">D. @Configuration</button>
+        </div>
+        <div class="quiz-feedback" id="q1-fb">@EnableAutoConfiguration 通过 @Import(AutoConfigurationImportSelector.class) 导入自动配置选择器。@Import 是 Spring 的注解，用于导入配置类或 ImportSelector 实现。</div>
+      </div>
+
+      <div class="quiz-q" id="q2">
+        <p>2. Spring Boot 3.x 的自动配置文件路径是？</p>
+        <div class="quiz-options">
+          <button class="quiz-opt" onclick="answer('q2','A')">A. META-INF/spring.factories</button>
+          <button class="quiz-opt" onclick="answer('q2','B')">B. META-INF/services/</button>
+          <button class="quiz-opt" onclick="answer('q2','C')">C. META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports</button>
+          <button class="quiz-opt" onclick="answer('q2','D')">D. application.properties</button>
+        </div>
+        <div class="quiz-feedback" id="q2-fb">Spring Boot 3.x 废弃了 spring.factories 机制，改用 META-INF/spring/*.imports 文件。这个变更是为了提升启动性能，避免解析所有 spring.factories 文件。</div>
+      </div>
+
+      <div class="quiz-q" id="q3">
+        <p>3. @ConditionalOnBean 和 @ConditionalOnClass 的核心区别？</p>
+        <div class="quiz-options">
+          <button class="quiz-opt" onclick="answer('q3','A')">A. 前者检查 IoC 容器，后者检查类路径</button>
+          <button class="quiz-opt" onclick="answer('q3','B')">B. 前者检查类路径，后者检查 IoC 容器</button>
+          <button class="quiz-opt" onclick="answer('q3','C')">C. 前者是编译时检查，后者是运行时检查</button>
+          <button class="quiz-opt" onclick="answer('q3','D')">D. 两者没有区别，可以互换使用</button>
+        </div>
+        <div class="quiz-feedback" id="q3-fb">@ConditionalOnBean 检查 IoC 容器中是否存在某个 Bean，@ConditionalOnClass 检查类路径是否存在某个类。这是最容易被混淆的两个注解，面试中经常被问到。</div>
+      </div>
+
+      <div class="quiz-q" id="q4">
+        <p>4. AutoConfigurationImportSelector 的哪个方法返回要导入的配置类数组？</p>
+        <div class="quiz-options">
+          <button class="quiz-opt" onclick="answer('q4','A')">A. getAutoConfigurationEntry()</button>
+          <button class="quiz-opt" onclick="answer('q4','B')">B. selectImports()</button>
+          <button class="quiz-opt" onclick="answer('q4','C')">C. loadFactoryNames()</button>
+          <button class="quiz-opt" onclick="answer('q4','D')">D. filter()</button>
+        </div>
+        <div class="quiz-feedback" id="q4-fb">selectImports() 是 DeferredImportSelector 接口的方法，它返回要导入的配置类数组。内部调用 getAutoConfigurationEntry() 获取自动配置入口，然后转换为字符串数组。</div>
+      </div>
+
+      <div class="quiz-q" id="q5">
+        <p>5. 如何让 ClickHouseMcpAutoConfiguration 仅在 clickhouse.jdbc 驱动存在时生效？</p>
+        <div class="quiz-options">
+          <button class="quiz-opt" onclick="answer('q5','A')">A. @ConditionalOnBean(DataSource.class)</button>
+          <button class="quiz-opt" onclick="answer('q5','B')">B. @ConditionalOnProperty(name = "clickhouse.enabled")</button>
+          <button class="quiz-opt" onclick="answer('q5','C')">C. @ConditionalOnClass(ClickHouseDriver.class)</button>
+          <button class="quiz-opt" onclick="answer('q5','D')">D. @ConditionalOnMissingBean</button>
+        </div>
+        <div class="quiz-feedback" id="q5-fb">@ConditionalOnClass(ClickHouseDriver.class) 会在类路径存在 ClickHouse 驱动类时才生效。这是实现"可选依赖"的标准做法，确保 starter 不会在缺少依赖时强制加载。</div>
+      </div>
+
+      <div id="quiz-total-score" class="quiz-score"></div>
+    </div>
+
+    <!-- 课后行动 -->
+    <h2 id="actions">课后行动（按重要性排序）</h2>
+    <ol style="padding-left:20px;font-size:15px;line-height:2">
+      <li>手写 ClickHouseMcpAutoConfiguration 和 ClickHouseMcpProperties 类（15分钟）</li>
+      <li>创建 clickhouse-mcp-spring-boot-starter 子模块，配置 spring.factories 或 imports 文件（20分钟）</li>
+      <li>测试零配置集成：新建 Spring Boot 项目，引入 starter 依赖，验证自动配置生效（10分钟）</li>
+      <li>分析 spring-ai-mcp-server 的 McpServerAutoConfiguration 源码，理解其设计思路（20分钟）</li>
+      <li>准备面试答题：对着镜子或录音，练习"讲讲 Spring Boot 自动配置原理"的 90 秒版本（10分钟）</li>
+    </ol>
+
+    <div class="ask-me">
+      <strong>有问题？直接问你的老师。</strong><br>
+      对 @Conditional 条件注解的组合使用、自动配置的执行顺序（@AutoConfigureAfter/@AutoConfigureBefore）、starter 模块的多版本兼容有疑问？在对话框里问，马上解答。
+    </div>
+
+    <div class="nav-links">
+      <a href="0021-tool-executor-interface.html">← Lesson 21: ToolExecutor 接口</a>
+      <span style="color:#94a3b8">Lesson 24 coming next →</span>
+    </div>
+  </main>
+</div>
+
+<script>
+  const answers = { q1:'B', q2:'C', q3:'A', q4:'B', q5:'C' };
+  const scores = {};
+
+  function answer(qid, choice) {
+    const opts = document.querySelectorAll(`#${qid} .quiz-opt`);
+    opts.forEach(o => o.disabled = true);
+    const selected = opts[['A','B','C','D'].indexOf(choice)];
+    const correct = answers[qid];
+    if (choice === correct) {
+      selected.classList.add('correct');
+      scores[qid] = 1;
+    } else {
+      selected.classList.add('wrong');
+      opts[['A','B','C','D'].indexOf(correct)].classList.add('correct');
+      scores[qid] = 0;
+    }
+    const fb = document.getElementById(`${qid}-fb`);
+    fb.style.display = 'block';
+    updateTotal();
+  }
+
+  function updateTotal() {
+    const total = Object.keys(answers).length;
+    const got = Object.values(scores).reduce((a,b)=>a+b,0);
+    if (Object.keys(scores).length === total) {
+      const el = document.getElementById('quiz-total-score');
+      el.style.display = 'block';
+      el.textContent = `得分：${got}/${total} ${got >= 4 ? '🎉 优秀！' : got >= 3 ? '👍 不错！' : '💪 继续加油！'}`;
+      el.className = 'quiz-score ' + (got >= 4 ? 'good' : 'ok');
+    }
+  }
+
+  function checkInline(inputId, expected, fbId) {
+    const val = document.getElementById(inputId).value.trim();
+    const fb = document.getElementById(fbId);
+    fb.style.display = 'block';
+    if (val.includes(expected)) {
+      fb.className = 'feedback ok';
+      fb.textContent = '✓ 正确';
+    } else {
+      fb.className = 'feedback bad';
+      fb.textContent = `✗ 答案应包含：${expected}`;
+    }
+  }
+
+  function checkPre(inputId, expectedKeywords, fbId) {
+    const val = document.getElementById(inputId).value.trim().toLowerCase();
+    const fb = document.getElementById(fbId);
+    fb.style.display = 'block';
+    const matched = expectedKeywords.some(keyword => val.includes(keyword.toLowerCase()));
+    if (matched) {
+      fb.className = 'feedback ok';
+      fb.textContent = '✓ 正确';
+    } else {
+      fb.className = 'feedback bad';
+      fb.textContent = `✗ 答案应包含关键词：${expectedKeywords.join(' 或 ')}`;
+    }
+  }
+
+  function checkPreText(inputId, expectedKeywords, fbId) {
+    const val = document.getElementById(inputId).value.trim().toLowerCase();
+    const fb = document.getElementById(fbId);
+    fb.style.display = 'block';
+    const matched = expectedKeywords.some(keyword => val.includes(keyword.toLowerCase()));
+    if (matched) {
+      fb.className = 'feedback ok';
+      fb.textContent = '✓ 正确';
+    } else {
+      fb.className = 'feedback bad';
+      fb.textContent = `✗ 答案应包含关键词：${expectedKeywords.join(' 或 ')}`;
+    }
+  }
+</script>
+</body>
+</html>
